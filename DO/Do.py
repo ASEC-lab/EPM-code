@@ -1,6 +1,6 @@
 import numpy as np
 from DataHandler.DataSets import DataSets
-from DataHandler.DataFormat import enc_array, format_array_for_enc, pearson_correlation, calc_X, restore_array, mult_enc_matrix
+from DataHandler.DataFormat import enc_array, format_array_for_enc, pearson_correlation
 import time
 import logging, sys
 
@@ -102,12 +102,19 @@ class DO:
         meth_matrix1 = np.array([[10, 10, 10],
                                  [20, 20, 20],
                                  [30, 30, 30]])
+
+        dec_mult = mul_matrix(meth_matrix, meth_matrix1)
+        print(dec_mult)
+
+        '''
         enc0 = enc_array(meth_matrix)
         enc1 = enc_array(meth_matrix1)
         enc_mult = mult_enc_matrix(enc0, enc1)
         dec_mult = self.csp.dec_array(enc_mult)
         #something in the encrypt-decrypt process isn't working. getting the same numbers for all items in the matrix
-
+        '''
+        enc0 = enc_array(meth_matrix)
+        dec_mult = self.csp.dec_array(enc0)
         print(dec_mult)
 
 

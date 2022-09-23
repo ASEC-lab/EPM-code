@@ -1,6 +1,4 @@
 import numpy as np
-from DataHandler.DataFormat import calc_X
-
 # An implementation of the Epigenetic pacemaker algorithm
 # used mainly for benchmark and validation
 
@@ -13,6 +11,35 @@ class EPM:
         self.age_vals = age_vals
         self.meth_vals = meth_vals
 
+    def calc_X(self, ages, meth_vals):
+
+        """
+        Calculate the X matrix as described in the EPM algorithm
+        @param ages: age values
+        @param meth_vals: methylation values
+        @return: The X matrix
+        """
+        # calculate the size of the X matrix
+        # the size should be mn X 2n
+        m = ages.shape[0]  # the number of individuals
+        n = meth_vals.shape[0]  # the number of sites
+        x_rows_num = m * n
+        x_cols_num = 2 * n
+        X = np.zeros((x_rows_num, x_cols_num))
+
+        t = 0
+        col_index = 0
+        for i in range(x_rows_num):
+
+            X[i][col_index] = ages[t]
+            X[i][col_index + n] = 1
+            t = t + 1
+            if ((i + 1) % m) == 0:
+                col_index = (col_index + 1)
+                t = 0
+
+        return X
+
     # below are the 3 methods discussed in the articles for calculating the value of beta
     # beta = (XtX)^-1*XtY
     # in the end only one needs to be used and this will be the result of the site step
@@ -23,7 +50,7 @@ class EPM:
         @return: rates and s0 values
         """
         n = self.meth_vals.shape[0]  # the number of sites
-        X = calc_X(self.age_vals, self.meth_vals)
+        X = self.calc_X(self.age_vals, self.meth_vals)
         Xt = X.transpose()
         XtX = np.dot(Xt, X)
         invert_XtX = np.linalg.inv(XtX)

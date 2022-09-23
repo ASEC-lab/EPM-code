@@ -19,7 +19,22 @@ class CSP:
         # generate the public/private keys upon init
         self.__gen_enc_keys()
 
-    def dec_array(self, arr: np.ndarray) -> np.ndarray:
+    def decrypt_arr(self, arr):
+        # not for general use, only for debug and test
+        return self.__pyfhelCtxt.decryptInt(arr)
+
+    def encode_array(self, arr: np.ndarray):
+        assert arr.ndim == 1, "Only 1 dimensional arrays are supported"
+        arr_encoded = self.__pyfhelCtxt.encodeInt(arr)
+        return arr_encoded
+
+    def encrypt_array(self, arr: np.ndarray):
+        assert arr.ndim == 1, "Only 1 dimensional arrays are supported"
+        arr_encoded = self.__pyfhelCtxt.encodeInt(arr)
+        arr_encrypted = self.__pyfhelCtxt.encryptPtxt(arr_encoded)
+        return arr_encrypted
+    '''
+    def dec_array_old(self, arr: np.ndarray) -> np.ndarray:
         dec_arr = []
         for row in arr:
             dec_row = []
@@ -27,27 +42,17 @@ class CSP:
                 dec_row.append(self.pyfhelCtxt.decrypt(num, decode=True))
             dec_arr.append(dec_row)
         return dec_arr
+    '''
 
     def __gen_enc_keys(self):
-        self.pyfhelCtxt = Pyfhel()
-        self.pyfhelCtxt.contextGen("bfv", n=16384, t=65537)
-        self.pyfhelCtxt.keyGen()
-        self.pyfhelCtxt.save_public_key("../pubkey.pk")
-        self.pyfhelCtxt.save_context("../context.con")
+        self.__pyfhelCtxt = Pyfhel()
+        self.__pyfhelCtxt.contextGen("bfv", n=2**13, t=65537, t_bits=20, sec=128)
+        self.__pyfhelCtxt.keyGen()
+        self.__pyfhelCtxt.rotateKeyGen()
+        self.__pyfhelCtxt.relinKeyGen()
+        self.__pyfhelCtxt.save_public_key("../pubkey.pk")
+        self.__pyfhelCtxt.save_rotate_key("../rotkey.pk")
+        self.__pyfhelCtxt.save_context("../context.con")
 
-    def __dec_array(self, arr: np.ndarray) -> np.ndarray:
-        """
-        decrypt a given numpy array
-        note that this is a private function which should not be exposed to external parties
-        @param arr: the array to decrypt
-        @return: the decrypted array
-        """
-        assert arr.ndim <= 2, "Only 1D and 2D arrays are supported for decryption"
-        arr_as_list = arr.tolist()  # faster for processing than numpy array?
-        if arr.ndim == 2:
-            decrypted_arr_as_list = [[self.__private_key.decrypt(x) for x in row] for row in arr_as_list]
-        else:
-            decrypted_arr_as_list = [self.__private_key.decrypt(x) for x in arr_as_list]
-        decrypted_numpy_arr = np.array(decrypted_arr_as_list)
-        return decrypted_numpy_arr
+
 
