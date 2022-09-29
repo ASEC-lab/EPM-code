@@ -13,6 +13,22 @@ def epm_orig():
     EPM implementation without encryption. Used for benchmarking.
     @return: calculated model params
     """
+    max_iterations = 3 #100
+    rss = 0.0000001
+    data_sets = DataSets()
+    # read training data
+    full_train_data = data_sets.get_example_train_data()
+    train_samples, train_cpg_sites, train_ages, train_methylation_values = full_train_data
+    # run pearson correlation in order to reduce the amount of processed data
+    abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
+    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
+    correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
+    # run the algorithm
+    epm = EPM(correlated_meth_val, train_ages)
+    model = epm.calc_model(max_iterations, rss)
+    return model
+
+def epm_orig_new_method():
     max_iterations = 100
     rss = 0.0000001
     data_sets = DataSets()
@@ -21,12 +37,13 @@ def epm_orig():
     train_samples, train_cpg_sites, train_ages, train_methylation_values = full_train_data
     # run pearson correlation in order to reduce the amount of processed data
     abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
-    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
+    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
     # run the algorithm
     epm = EPM(correlated_meth_val, train_ages)
-    model = epm.calc_model(max_iterations, rss)
-    return model
+    ages = epm.calc_model_new_method()
+    return ages
+
 '''
 def main_old():
     print("Calculating encrypted model")
@@ -52,54 +69,6 @@ def main_old():
     print(enc_epm_model)
     print(orig_model)
 '''
-
-def fhe_test():
-    HE = Pyfhel()  # Creating empty Pyfhel object
-    bfv_params = {
-        'scheme': 'BFV',  # can also be 'bfv'
-        'n': 2 ** 13,  # Polynomial modulus degree, the num. of slots per plaintext,
-        #  of elements to be encoded in a single ciphertext in a
-        #  2 by n/2 rectangular matrix (mind this shape for rotations!)
-        #  Typ. 2^D for D in [10, 16]
-        't': 65537,  # Plaintext modulus. Encrypted operations happen modulo t
-        #  Must be prime such that t-1 be divisible by 2^N.
-        't_bits': 20,  # Number of bits in t. Used to generate a suitable value
-        #  for t. Overrides t if specified.
-        'sec': 128,  # Security parameter. The equivalent length of AES key in bits.
-        #  Sets the ciphertext modulus q, can be one of {128, 192, 256}
-        #  More means more security but also slower computation.
-    }
-    HE.contextGen(**bfv_params)  # Generate context for bfv scheme
-    HE.keyGen()  # Key Generation: generates a pair of public/secret keys
-    HE.rotateKeyGen()  # Rotate key generation --> Allows rotation/shifting
-    HE.relinKeyGen()  # Relinearization key generation
-
-    print("\n1. Pyfhel FHE context generation")
-    print(f"\t{HE}")
-
-    arr3 = np.array([1, 2, 3])
-    arr_neg = np.array([-1, -7, 3])
-    ptxt3 = HE.encodeInt(arr3)
-    ctxt3 = HE.encryptPtxt(ptxt3)
-    ptxt_arr_neg = HE.encodeInt(arr_neg)
-    ctxt_arr_neg = HE.encryptPtxt(ptxt_arr_neg)
-
-
-    ccsum = ctxt3 << 2
-    mul_by_neg = ccsum * ctxt_arr_neg
-    ccsquare = ctxt3 ** 2
-    ~ccsquare
-    ccsquare_shift = ccsquare << 2
-    ccmult_regular_num = ctxt3 * 100
-    print(ctxt3)
-    ccsum_dec = HE.decryptInt(ccsum)
-    print("r3: ", ccsum_dec)
-    ccsquare_dec = HE.decryptInt(ccsquare)
-    print("ccsquare: ", ccsquare_dec)
-    ccmult_regular_num_dec = HE.decryptInt(ccmult_regular_num)
-    print("ccmult_regular_num: ", ccmult_regular_num_dec)
-    mul_by_neg_dec = HE.decryptInt(mul_by_neg)
-    print("mul by neg: ", mul_by_neg_dec)
 
 
 def fhe_test2():
@@ -234,6 +203,88 @@ def fhe_test2():
     print("   ->\tctxt1 * ptxt2 = cpMul --(decr)--> ", rcpMul)
     print("r3: ", r3)
 
+
+def fhe_test():
+    HE = Pyfhel()  # Creating empty Pyfhel object
+    bfv_params = {
+        'scheme': 'BFV',  # can also be 'bfv'
+        'n': 2 ** 13,  # Polynomial modulus degree, the num. of slots per plaintext,
+        #  of elements to be encoded in a single ciphertext in a
+        #  2 by n/2 rectangular matrix (mind this shape for rotations!)
+        #  Typ. 2^D for D in [10, 16]
+        't': 65537,  # Plaintext modulus. Encrypted operations happen modulo t
+        #  Must be prime such that t-1 be divisible by 2^N.
+        't_bits': 20,  # Number of bits in t. Used to generate a suitable value
+        #  for t. Overrides t if specified.
+        'sec': 128,  # Security parameter. The equivalent length of AES key in bits.
+        #  Sets the ciphertext modulus q, can be one of {128, 192, 256}
+        #  More means more security but also slower computation.
+    }
+    HE.contextGen(**bfv_params)  # Generate context for bfv scheme
+    HE.keyGen()  # Key Generation: generates a pair of public/secret keys
+    HE.rotateKeyGen()  # Rotate key generation --> Allows rotation/shifting
+    HE.relinKeyGen()  # Relinearization key generation
+
+    print("\n1. Pyfhel FHE context generation")
+    print(f"\t{HE}")
+
+    # arr_big = np.array(range(18000))
+    arr3 = np.array([1, 2, 3])
+    arr_neg = np.array([-1, -7, 3])
+    # ptxt_big = HE.encodeInt(arr_big)
+    # ctxt_big = HE.encryptPtxt(ptxt_big)
+    ptxt3 = HE.encodeInt(arr3)
+    ctxt3 = HE.encryptPtxt(ptxt3)
+    ptxt_arr_neg = HE.encodeInt(arr_neg)
+    ctxt_arr_neg = HE.encryptPtxt(ptxt_arr_neg)
+
+
+    ccsum = ctxt3 << 2
+    mul_by_neg = ccsum * ctxt_arr_neg
+    ccsquare = ctxt3 ** 2
+    ~ccsquare
+    ccsquare_shift = ccsquare << 2
+    ccmult_regular_num = ctxt3 * 100
+    print(ctxt3)
+    ccsum_dec = HE.decryptInt(ccsum)
+    print("r3: ", ccsum_dec[8191])
+    ccsquare_dec = HE.decryptInt(ccsquare)
+    print("ccsquare: ", ccsquare_dec)
+    ccmult_regular_num_dec = HE.decryptInt(ccmult_regular_num)
+    print("ccmult_regular_num: ", ccmult_regular_num_dec)
+    mul_by_neg_dec = HE.decryptInt(mul_by_neg)
+    print("mul by neg: ", mul_by_neg_dec)
+
+
+def test_recrypt():
+    HE = Pyfhel()  # Creating empty Pyfhel object
+    HE.contextGen("bfv", n=2 ** 13, t_bits=20, sec=128)
+    HE.keyGen()  # Key Generation: generates a pair of public/secret keys
+    HE.rotateKeyGen()  # Rotate key generation --> Allows rotation/shifting
+    HE.relinKeyGen()  # Relinearization key generation
+
+    print("\n1. Pyfhel FHE context generation")
+    print(f"\t{HE}")
+
+    arr3 = np.array([1, 2, 3])
+    arr_neg = np.array([-1, -7, 3])
+    ptxt3 = HE.encodeInt(arr3)
+    ctxt3 = HE.encryptPtxt(ptxt3)
+    ptxt_arr_neg = HE.encodeInt(arr_neg)
+    ctxt_arr_neg = HE.encryptPtxt(ptxt_arr_neg)
+    step = 0
+    lvl = HE.noise_level(ctxt3)
+    while lvl > 0:
+        print(f"\tStep {step}: noise_lvl {lvl}, res {HE.decryptInt(ctxt3)[:4]}")
+        step += 1
+        result = ctxt3 * ctxt_arr_neg  # Multiply in-place
+        ctxt3 = ~(ctxt3)  # Always relinearize after each multiplication!
+        lvl = HE.noise_level(ctxt3)
+
+    print(f"\tFinal Step {step}: noise_lvl {lvl}, res {HE.decryptInt(ctxt3)[:4]}")
+    print("---------------------------------------")
+
+
 def test_mle():
     csp = CSP()
     mle = MLE(csp)
@@ -246,14 +297,36 @@ def test_mle():
     rates, s0 = mle.calc_beta_corollary1(m, n, ages, Y)
     print(rates)
     print(s0)
-    rates, s0 = mle.site_step(m, n, encrypted_ages, encrypted_Y)
-    print(rates)
-    print(s0)
+    ages = mle.site_step()
+    rates, s0 = mle.adapted_site_step(m, n, encrypted_ages, encrypted_Y, 1)
+    print(csp.decrypt_arr(rates))
+    print(csp.decrypt_arr(s0))
+
+    dummy_rates = np.array([2, 3])
+    dummy_s0 = np.array([50, 60])
+    dummy_meth_vals = np.array([1, 2, 3, 4, 5, 6])
+    encrypted_dummy_meth_vals = csp.encrypt_array(dummy_meth_vals)
+    encrypted_dummy_rates = csp.encrypt_array(dummy_rates)
+    encrypted_dummy_s0 = csp.encrypt_array(dummy_s0)
+    enc_gamma = csp.encrypt_array(np.array([5]))
+    mle.adapted_time_step(encrypted_dummy_rates, encrypted_dummy_s0, encrypted_dummy_meth_vals, 2, 3, enc_gamma)
+
 
 
 def main():
-    #fhe_test()
+    # fhe_test()
     test_mle()
+
+    #test_recrypt()
+
+    # epm cleartext testing
+    '''
+    model = epm_orig()
+    np.savetxt('orig.out', model['ages'], delimiter=',')
+    ages = epm_orig_new_method()
+    np.savetxt('new.out', ages, delimiter=',')
+    '''
+
     '''
     csp = CSP()
     do = DO(csp)

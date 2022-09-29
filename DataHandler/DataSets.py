@@ -35,7 +35,7 @@ class DataSets:
                 formatted_data.append(self.convert_to_float(line.decode('utf-8').strip().split('\t')))
         sample_names = formatted_data[0]
         cpg_sites = [line[0] for line in formatted_data[1:-1]]
-        ages = np.array(formatted_data[-1][1:])
+        ages = np.array(formatted_data[-1][1:], dtype=np.longdouble)
         meth_vals = np.array([line[1:] for line in formatted_data[1:-1]])
         return sample_names, cpg_sites, ages, meth_vals
 

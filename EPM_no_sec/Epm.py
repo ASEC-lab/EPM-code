@@ -153,6 +153,62 @@ class EPM:
         s0 = result[n:]
         return rates, s0
 
+    def both_steps_with_a_twist(self, sigma_ri_square):
+        mult_val_list = []
+        m = self.age_vals.shape[0]  # the number of individuals
+        n = self.meth_vals.shape[0]  # the number of sites
+        result = np.zeros(2 * n)  # here will be the results of the final calculation
+        sigma_t = np.sum(self.age_vals)
+        sigma_t_square = np.sum(self.age_vals ** 2)
+        gamma = (sigma_t ** 2 - m * sigma_t_square)
+
+        # prepare the multiply values
+        for i in range(m):
+            mult_val_list.append((-1 * m * self.age_vals[i] + sigma_t) * sigma_ri_square)
+
+        for i in range(m):
+            mult_val_list.append(self.age_vals[i] * sigma_t - sigma_t_square)
+
+        list_len_div2 = int(len(mult_val_list) / 2)
+
+        Y = self.meth_vals.flatten().transpose().astype(float)
+
+        # as described in the corollary, we should be able to calculate (XtX)^-1XtY
+        # without using heavy linear algebra calculations
+        # due to the structure of the matrix (XtX)^-1Xt which is made up of 2 expanded-diagonal matrices
+        # we can calculate the multiplication values for each of these matrices
+        # and then multiply the respective values in Y.
+        # for the upper part of the result: each i*m value in Y will be multiplied by the i'th value
+        # for the lower part of the result: each i*m value in Y will be multiplied by the i+list_len_div2 value
+
+        i = 0
+        temp_result_upper = Y.copy()
+        temp_result_lower = Y.copy()
+        while (i < list_len_div2):
+            temp_result_upper[i::list_len_div2] *= mult_val_list[i]
+            temp_result_lower[i::list_len_div2] *= mult_val_list[i + list_len_div2]
+            i += 1
+
+        # for the final step, each m values from the upper and lower matrices will be summed
+        # (in order to "emulate" matrix multiplication) and put into its respective location in the result
+        for j in range(n):
+            result[j] = np.sum(temp_result_upper[j * m:((j + 1) * m)])
+            result[n + j] = np.sum(temp_result_lower[j * m:((j + 1) * m)])
+
+        rates = result[0:n]
+        s0_vals = result[n:]
+
+        # calc the matrix  S = (S_ij - s0_i)
+        meth_vals_gamma = self.meth_vals * gamma
+        S = np.transpose(np.subtract(np.transpose(meth_vals_gamma), s0_vals))
+        # calc Si * ri
+        F = S * rates[:, np.newaxis]
+        # calc sum(r_i^2)
+        r_squared_sum = np.sum(rates ** 2)
+        t = np.sum(F, axis=0)
+        return t, r_squared_sum
+        #t = np.sum(F, axis=0) / r_squared_sum
+
     def calc_rss(self, rates, s0_vals, ages):
 
         total_error = 0.0
@@ -210,4 +266,16 @@ class EPM:
 
         return model_params
 
+    def calc_model_new_method(self):
+        i = 0
+        iter_limit = 3
+        sigma_ri_squared = 1
+
+        while i < iter_limit:
+            ages, sigma_ri_squared = self.both_steps_with_a_twist(sigma_ri_squared)
+            self.age_vals = ages
+            i += 1
+
+        ages = self.age_vals / sigma_ri_squared
+        return ages
 
