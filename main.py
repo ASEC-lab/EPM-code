@@ -311,16 +311,24 @@ def test_mle():
     enc_gamma = csp.encrypt_array(np.array([5]))
     mle.adapted_time_step(encrypted_dummy_rates, encrypted_dummy_s0, encrypted_dummy_meth_vals, 2, 3, enc_gamma)
 
-
+def test_do():
+    csp = CSP()
+    do = DO(csp)
+    meth_vals = np.arange(0, 12000, 1,  dtype=np.int64)
+    meth_vals = meth_vals.reshape(30, 400)
+    ages = np.array([10, 11, 12], dtype=np.int64)
+    #do.encrypt_train_data(meth_vals, ages)
+    do.calc_model()
 
 def main():
     # fhe_test()
-    test_mle()
+    #test_mle()
+    test_do()
 
     #test_recrypt()
 
-    # epm cleartext testing
     '''
+    # epm cleartext testing
     model = epm_orig()
     np.savetxt('orig.out', model['ages'], delimiter=',')
     ages = epm_orig_new_method()

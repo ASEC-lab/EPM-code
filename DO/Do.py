@@ -32,33 +32,52 @@ class DO:
         full_train_data = data_sets.get_example_train_data()
         return full_train_data
 
-
     def encrypt_train_data(self, meth_vals, ages):
         """
         Prepare and encrypt the training data for sending to MLE
 
         @param meth_vals: methylation values read from the training data
         @param ages: ages read from the training data
-        @return: Encrypted XtX and XtY, rank of XtX
+        @return: Encrypted methylation values and ages
         """
-        X = calc_X(ages, meth_vals)
-        XtX = np.dot(np.transpose(X), X)
-        rank_XtX = np.linalg.matrix_rank(XtX)
-        Y = meth_vals.flatten().transpose()
-        XtY = np.dot(np.transpose(X), Y)
 
-        logging.debug('Encrypting XtX')
-        tic = time.perf_counter()
-        enc_XtX = enc_array(XtX, self.public_key)
-        toc = time.perf_counter()
-        logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
-        logging.debug('Encrypting XtY')
-        tic = time.perf_counter()
-        enc_XtY = enc_array(XtY, self.public_key)
-        toc = time.perf_counter()
-        logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
+        encrypted_meth_vals = {}
+        enc_array_size = self.csp.get_enc_n() // 2
+        m = meth_vals.shape[1]
 
-        return enc_XtX, enc_XtY, rank_XtX
+        # as the encrypted data is stored in a 1X1 vector format, need to convert the large methylation value
+        # array to one or more vectors of this type
+        # each vector will contain the methylation values for several individuals
+        # if the original methylation array looked as such for 3 individuals and 2 sites:
+        #        ind_0 ind_1 ind_2
+        # site_1  S_00 S_01  S_02
+        # site_2  S_10 S_11  S_12
+        # the new vector will look like this:
+        # S_00 S_01 S_02 S_10 S_11 S_12 ...
+
+
+        # calculate the amount of elements that can fit into a single vector
+        elements_in_vector = enc_array_size // m
+
+        # now reshape the meth_vals array to match the new format
+        meth_vals_total_size = meth_vals.shape[0] * meth_vals.shape[1]
+        meth_vals_new_cols = elements_in_vector*m
+        meth_vals_new_rows = meth_vals_total_size // meth_vals_new_cols
+        meth_vals_new_rows += 1 if (meth_vals_total_size % meth_vals_new_cols) > 0 else 0
+        meth_vals_new_shape = meth_vals.reshape((meth_vals_new_rows, meth_vals_new_cols))
+
+
+        # create the new encrypted vector dictionary
+        print("Encrypting methylation values")
+        encrypted_vector_list = np.apply_along_axis(self.csp.encrypt_array, axis=1, arr=meth_vals_new_shape)
+
+        # encrypt the ages
+        print("Encrypting ages")
+        encrypted_ages = self.csp.encrypt_array(ages)
+
+        return encrypted_vector_list, encrypted_ages
+
+
 
     def run_pearson_correlation(self, meth_vals: np.ndarray, ages: np.ndarray):
         """
@@ -95,46 +114,20 @@ class DO:
         return total_error
 
     def calc_model(self):
-        meth_matrix = np.array([[5, 6, 7],
-                                [1, 2, 3],
-                                [4, 4, 4]])
-
-        meth_matrix1 = np.array([[10, 10, 10],
-                                 [20, 20, 20],
-                                 [30, 30, 30]])
-
-        dec_mult = mul_matrix(meth_matrix, meth_matrix1)
-        print(dec_mult)
-
-        '''
-        enc0 = enc_array(meth_matrix)
-        enc1 = enc_array(meth_matrix1)
-        enc_mult = mult_enc_matrix(enc0, enc1)
-        dec_mult = self.csp.dec_array(enc_mult)
-        #something in the encrypt-decrypt process isn't working. getting the same numbers for all items in the matrix
-        '''
-        enc0 = enc_array(meth_matrix)
-        dec_mult = self.csp.dec_array(enc0)
-        print(dec_mult)
-
-
-    def calc_model1(self):
         train_data = self.read_train_data()
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
         correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
-        logging.debug('Formatting methylation values array')
+        logging.debug('Formatting methylation values and ages')
         formatted_meth_values = format_array_for_enc(correlated_meth_vals)
-        logging.debug('Encrypting methylation values')
+        formatted_ages = format_array_for_enc(train_ages)
+        logging.debug('Encrypting ages and methylation  values')
         tic = time.perf_counter()
-        # encrypt the methylation values array
-        enc_meth_vals = enc_array(formatted_meth_values)
+
+        enc_meth_vals, enc_ages = self.encrypt_train_data(formatted_meth_values, formatted_ages)
         toc = time.perf_counter()
         logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
-        formatted_ages = format_array_for_enc(train_ages)
-        enc_XtX, enc_XtY, rank_XtX = self.encrypt_train_data(formatted_meth_values, formatted_ages)
-
 
     '''
     def calc_model(self, iter_limit: int = 100, error_tolerance: float = .00001):

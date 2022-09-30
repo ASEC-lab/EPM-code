@@ -30,7 +30,7 @@ class MLE:
 
     def __init__(self, csp):
         self.csp = csp
-        rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()))
+        rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()//2))
         self.rand_mask = csp.encrypt_array(rand_mask)
 
     def get_data_from_DO(self, A: np.ndarray, B: np.ndarray, meth_vals: np.ndarray, rank_A: int):
@@ -58,10 +58,13 @@ class MLE:
     def check_noise_lvl(self, ctxt):
         ctxt += self.rand_mask
         lvl = self.csp.get_noise_level(ctxt)
+        assert lvl > 0, "reached 0 noised budget"
+        '''
         if lvl == 0:
             print("Recrypting")
             ctxt = self.csp.recrypt_array(ctxt)
             self.recrypt_count += 1
+        '''
         ctxt -= self.rand_mask
         return ctxt
 
@@ -188,7 +191,7 @@ class MLE:
             i *= 2
         return num_array
 
-    def adapted_site_step(self, m: int, n: int, ages: np.ndarray, meth_vals: np.ndarray, sum_ri_square):
+    def adapted_site_step(self, m: int, n: int, ages, meth_vals_list, sum_ri_square):
         """
         The EPM site step algorithm. This step calculates beta = (XtX)^-1 XtY using the conclusions from
         lemma 3 / corollary 1 in https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-020-6606-0
@@ -244,7 +247,8 @@ class MLE:
         print("calc rates and s0 values starting at: ", time.perf_counter())
         # calculate the rate and s0 values
         for i in range(0, n):
-            shifted_vals = meth_vals << (i*m)
+            for meth_vals in meth_vals_list:
+                shifted_vals = meth_vals << (i*m)
             print("shifted: ", self.csp.decrypt_arr(shifted_vals))
             mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
             #~mult_assist # re-linearize
@@ -266,7 +270,7 @@ class MLE:
         dec_s0 = self.csp.decrypt_arr(s0_vals)
         return dec_rates, dec_s0
         '''
-        return rates, s0_vals
+        return rates, s0_vals, gamma_denom
 
     def adapted_time_step(self, rates, s0_vals, meth_vals, n, m, gamma):
 
