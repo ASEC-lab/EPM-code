@@ -21,12 +21,27 @@ def epm_orig():
     train_samples, train_cpg_sites, train_ages, train_methylation_values = full_train_data
     # run pearson correlation in order to reduce the amount of processed data
     abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
-    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
+    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
     # run the algorithm
     epm = EPM(correlated_meth_val, train_ages)
     model = epm.calc_model(max_iterations, rss)
     return model
+
+
+def format_array_for_enc(arr: np.ndarray) -> np.ndarray:
+    """
+    prepare the data for usage with the homomorphic encryption
+    1. Round the numbers to the defined number of digits
+    2. Format the numbers into integers
+    @param arr: the array to format
+    @return: the formatted array
+    """
+
+    rounded_arr = arr.round(decimals=2)
+    rounded_arr = rounded_arr * (10 ** 2)
+    int_arr = rounded_arr.astype(int)
+    return int_arr
 
 def epm_orig_new_method():
     max_iterations = 100
@@ -39,8 +54,11 @@ def epm_orig_new_method():
     abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
     correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
+
+    formatted_ages = format_array_for_enc(train_ages)
+    formatter_correlated_meth_val = format_array_for_enc(correlated_meth_val)
     # run the algorithm
-    epm = EPM(correlated_meth_val, train_ages)
+    epm = EPM(formatter_correlated_meth_val, formatted_ages)
     ages = epm.calc_model_new_method()
     return ages
 
@@ -288,52 +306,35 @@ def test_recrypt():
 def test_mle():
     csp = CSP()
     mle = MLE(csp)
-    m = 3
-    n = 2
     Y = np.array([2, 5, 9, 7, 20, 15], dtype=np.int64)
     ages = np.array([10, 11, 12], dtype=np.int64)
     encrypted_Y = csp.encrypt_array(Y)
     encrypted_ages = csp.encrypt_array(ages)
-    rates, s0 = mle.calc_beta_corollary1(m, n, ages, Y)
-    print(rates)
-    print(s0)
-    ages = mle.site_step()
-    rates, s0 = mle.adapted_site_step(m, n, encrypted_ages, encrypted_Y, 1)
-    print(csp.decrypt_arr(rates))
-    print(csp.decrypt_arr(s0))
-
-    dummy_rates = np.array([2, 3])
-    dummy_s0 = np.array([50, 60])
-    dummy_meth_vals = np.array([1, 2, 3, 4, 5, 6])
-    encrypted_dummy_meth_vals = csp.encrypt_array(dummy_meth_vals)
-    encrypted_dummy_rates = csp.encrypt_array(dummy_rates)
-    encrypted_dummy_s0 = csp.encrypt_array(dummy_s0)
-    enc_gamma = csp.encrypt_array(np.array([5]))
-    mle.adapted_time_step(encrypted_dummy_rates, encrypted_dummy_s0, encrypted_dummy_meth_vals, 2, 3, enc_gamma)
+    sum_Y = mle.calc_encrypted_array_sum(encrypted_Y, 8192)
+    dec_sum_Y = csp.decrypt_arr(sum_Y)
+    print(dec_sum_Y)
 
 def test_do():
     csp = CSP()
     do = DO(csp)
-    meth_vals = np.arange(0, 12000, 1,  dtype=np.int64)
-    meth_vals = meth_vals.reshape(30, 400)
-    ages = np.array([10, 11, 12], dtype=np.int64)
     #do.encrypt_train_data(meth_vals, ages)
     do.calc_model()
 
 def main():
     # fhe_test()
-    #test_mle()
-    test_do()
+    # test_mle()
+    # test_do()
+    # ages = epm_orig_new_method()
 
     #test_recrypt()
 
-    '''
+
     # epm cleartext testing
-    model = epm_orig()
-    np.savetxt('orig.out', model['ages'], delimiter=',')
+    # model = epm_orig()
+    # np.savetxt('orig.out', model['ages'], delimiter=',')
     ages = epm_orig_new_method()
-    np.savetxt('new.out', ages, delimiter=',')
-    '''
+    # np.savetxt('new.out', ages, delimiter=',')
+
 
     '''
     csp = CSP()

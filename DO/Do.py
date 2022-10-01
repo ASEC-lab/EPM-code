@@ -1,6 +1,7 @@
 import numpy as np
 from DataHandler.DataSets import DataSets
-from DataHandler.DataFormat import enc_array, format_array_for_enc, pearson_correlation
+from DataHandler.DataFormat import format_array_for_enc, pearson_correlation
+from MLE.Mle import MLE
 import time
 import logging, sys
 
@@ -56,7 +57,7 @@ class DO:
         # S_00 S_01 S_02 S_10 S_11 S_12 ...
 
 
-        # calculate the amount of elements that can fit into a single vector
+        # calculate the amount of individual sites that can fit into a single vector
         elements_in_vector = enc_array_size // m
 
         # now reshape the meth_vals array to match the new format
@@ -64,7 +65,8 @@ class DO:
         meth_vals_new_cols = elements_in_vector*m
         meth_vals_new_rows = meth_vals_total_size // meth_vals_new_cols
         meth_vals_new_rows += 1 if (meth_vals_total_size % meth_vals_new_cols) > 0 else 0
-        meth_vals_new_shape = meth_vals.reshape((meth_vals_new_rows, meth_vals_new_cols))
+        meth_vals_new_shape = np.copy(meth_vals)
+        meth_vals_new_shape.resize((meth_vals_new_rows, meth_vals_new_cols), refcheck=False)
 
 
         # create the new encrypted vector dictionary
@@ -89,6 +91,7 @@ class DO:
         # run pearson correlation in order to reduce the amount of processed data
         abs_pcc_coefficients = abs(pearson_correlation(meth_vals, ages))
         correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
+        # correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
         correlated_meth_vals = meth_vals[correlated_meth_val_indices, :]
         return correlated_meth_vals
 
@@ -129,6 +132,17 @@ class DO:
         toc = time.perf_counter()
         logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
 
+        m = formatted_meth_values.shape[1]
+        n = formatted_meth_values.shape[0]
+        mle = MLE(self.csp)
+        mle.get_data_from_DO(enc_meth_vals, enc_ages, m, n)
+        new_ages, sum_ri_squared = mle.calc_model()
+        decrypt_ages = self.csp.decrypt_arr(new_ages)
+        decrypt_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)
+
+        final_ages = decrypt_ages/decrypt_sum_ri_squared[0]
+
+        return final_ages
     '''
     def calc_model(self, iter_limit: int = 100, error_tolerance: float = .00001):
         """

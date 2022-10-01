@@ -19,7 +19,7 @@ class CSP:
     def __init__(self):
         # generate the public/private keys upon init
         self.__gen_enc_keys()
-        self.__n = 2 ** 13
+        self.__n = 2 ** 14
 
     def decrypt_arr(self, arr):
         # not for general use, only for debug and test
@@ -70,7 +70,9 @@ class CSP:
 
     def __gen_enc_keys(self):
         self.__pyfhelCtxt = Pyfhel()
-        self.__pyfhelCtxt.contextGen("bfv", n=2 ** 13, t=65537, sec=128)
+        #self.__pyfhelCtxt.contextGen("bfv", n=2 ** 13, t_bits=48, sec=128)
+        self.__pyfhelCtxt.contextGen("bfv", n=2 ** 14, t_bits=60, sec=128)  # t=65537, sec=128)
+        #self.__pyfhelCtxt.contextGen("ckks", n=2 ** 14, scale=2**30, qi=[60,30 ,30, 30, 60])
         self.__pyfhelCtxt.keyGen()
         self.__pyfhelCtxt.rotateKeyGen()
         self.__pyfhelCtxt.relinKeyGen()
