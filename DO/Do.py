@@ -123,8 +123,10 @@ class DO:
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
         logging.debug('Formatting methylation values and ages')
-        formatted_meth_values = format_array_for_enc(correlated_meth_vals)
-        formatted_ages = format_array_for_enc(train_ages)
+        # formatted_meth_values = format_array_for_enc(correlated_meth_vals)
+        formatted_meth_values = correlated_meth_vals
+        # formatted_ages = format_array_for_enc(train_ages)
+        formatted_ages = train_ages.astype(np.double)
         logging.debug('Encrypting ages and methylation  values')
         tic = time.perf_counter()
 
