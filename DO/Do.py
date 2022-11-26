@@ -68,7 +68,6 @@ class DO:
         meth_vals_new_shape = np.copy(meth_vals)
         meth_vals_new_shape.resize((meth_vals_new_rows, meth_vals_new_cols), refcheck=False)
 
-
         # create the new encrypted vector dictionary
         print("Encrypting methylation values")
         encrypted_vector_list = np.apply_along_axis(self.csp.encrypt_array, axis=1, arr=meth_vals_new_shape)
@@ -88,8 +87,10 @@ class DO:
         @param ages: ages from input data
         @return: correlated methylation values
         """
-        # run pearson correlation in order to reduce the amount of processed data
         abs_pcc_coefficients = abs(pearson_correlation(meth_vals, ages))
+        # correlation of .80 will return ~700 site indices
+        # correlation of .91 will return ~24 site indices
+        # these figures are useful for debug, our goal is to run the 700 sites
         correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
         # correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
         correlated_meth_vals = meth_vals[correlated_meth_val_indices, :]
@@ -143,68 +144,5 @@ class DO:
         final_ages = decrypt_ages/decrypt_sum_ri_squared[0]
 
         return final_ages
-    '''
-    def calc_model(self, iter_limit: int = 100, error_tolerance: float = .00001):
-        """
-        model calculation: read the training data, encrypt, send to MLE, receive the model
-        @param iter_limit: max number of iterations in order to reach the desired error tolerance
-        @param error_tolerance: the RSS error tolerance between consecutive runs
-        @return: the calculated model
-        """
-        prev_rss = 0
-        i = 0
-
-        train_data = self.read_train_data()
-        individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
-        # format for encryption ie. round to 2 floating digits and convert to integer
-        # as required by the homomorphic encryption
-        logging.debug('Formatting methylation values array')
-        formatted_meth_values = format_array_for_enc(correlated_meth_vals)
-        logging.debug('Encrypting methylation values')
-        tic = time.perf_counter()
-        # encrypt the methylation values array
-        enc_meth_vals = enc_array(formatted_meth_values, self.public_key)
-        toc = time.perf_counter()
-        logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
-
-        # the module calculation loop based on RSS values
-        while i < iter_limit:
-            logging.debug("iteration {}".format(i))
-            logging.debug('Formatting ages array')
-            # format and encrypt methylation and ages
-            formatted_ages = format_array_for_enc(train_ages)
-            enc_XtX, enc_XtY, rank_XtX = self.encrypt_train_data(formatted_meth_values, formatted_ages)
-
-            self.mle.get_data_from_DO(enc_XtX, enc_XtY, enc_meth_vals, rank_XtX)
-            age_vals_formatted, rates, s0_vals_formatted = self.mle.calc_model()
-
-            # restore methylation values, ages and s0 values
-            # the rates do not need to be restored as they were not initially multiplied
-            train_ages = restore_array(age_vals_formatted)
-            s0_vals = restore_array(s0_vals_formatted)
-            restored_meth_values = restore_array(formatted_meth_values)
-
-            # calculate RSS. If RSS diff is lower than the error tolerance, return the model
-            rss = self.calc_rss(rates, s0_vals, train_ages, restored_meth_values)
-            logging.debug("rss {}".format(rss))
-            if i > 0:  # do not calculate RSS diff for the first iteration
-                assert rss < prev_rss, "New RSS {} is larger than previous {}".format(rss, prev_rss)
-                rss_diff = prev_rss - rss
-                if rss_diff < error_tolerance:
-                    break
-            prev_rss = rss
-            i += 1
-
-        model_params = {
-            'rss_err': rss_diff,
-            'num_of_iterations': i,
-            's0': s0_vals,
-            'rates': rates,
-            'ages': train_ages
-        }
-
-        return model_params
-        '''
 
 

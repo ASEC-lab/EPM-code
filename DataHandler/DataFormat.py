@@ -43,78 +43,10 @@ def enc_array(arr: np.ndarray):
     arr_encrypted = pyfhel_server.encryptPtxt(arr_encoded)
     return arr_encrypted
 
-'''
-def enc_array_elements(arr: np.ndarray):
-    pyfhel_server = Pyfhel()
-    pyfhel_server.load_context("../context.con")
-    pyfhel_server.load_public_key("../pubkey.pk")
-
-    rows = []
-    if arr.ndim > 1:
-        for row in arr:
-            row_encrypted = []
-            for num in row:
-                num_encoded = pyfhel_server.encode(num)
-                num_encrypted = pyfhel_server.encrypt(num_encoded)
-                row_encrypted.append(num_encrypted)
-            #row_encoded = pyfhel_server.encode(row)
-            #row_encrypted = pyfhel_server.encrypt(row_encoded)
-            rows.append(row_encrypted)
-        arr_encrypted = np.stack(rows, axis=0)
-    else:
-        arr_encoded = pyfhel_server.encode(arr)
-        arr_encrypted = pyfhel_server.encrypt(arr_encoded)
-    return arr_encrypted
-
-
-def mul_matrix(arr1: np.ndarray, arr2: np.ndarray):
-    arr1_rows, arr1_cols = arr1.shape
-    arr2_rows, arr2_cols = arr2.shape
-    enc_mult = []
-    zero_encrypted = 0
-
-    for row2 in arr2.transpose():
-        enc_row = []
-        for row1 in arr1:
-            num_sum = zero_encrypted
-            for i in range(arr1_cols):
-                mult = row1[i] * row2[i]
-                num_sum = num_sum + mult
-            enc_row.append(num_sum)
-        enc_mult.append(enc_row)
-
-    return np.asarray(enc_mult)
-
-
-def mult_enc_matrix(arr1: np.ndarray, arr2: np.ndarray):
-    enc_mult = []
-    pyfhel_server = Pyfhel()
-    pyfhel_server.load_context("../context.con")
-    pyfhel_server.load_public_key("../pubkey.pk")
-    arr1_rows, arr1_cols = arr1.shape
-    arr2_rows, arr2_cols = arr2.shape
-    assert arr1_cols == arr2_rows, \
-        "mult_enc_matrix: num of cols in array1 {} does not match num of rows in array2 {}".format(arr1_cols, arr2_rows)
-
-    zero_encoded = pyfhel_server.encode(0)
-    zero_encrypted = pyfhel_server.encrypt(zero_encoded)
-    for row2 in arr2.transpose():
-        enc_row = []
-        for row1 in arr1:
-            num_sum = zero_encrypted
-            for i in range(arr1_cols):
-                mult = pyfhel_server.multiply(row1[i], row2[i])
-                num_sum = pyfhel_server.add(num_sum, mult)
-            enc_row.append(num_sum)
-        enc_mult.append(enc_row)
-
-    return np.asarray(enc_mult)
-
-'''
 
 def pearson_correlation(meth_vals: np.array, ages: np.array) -> np.array:
     """
-    alculate pearson correlation coefficient between rows of input methylation values and ages
+    calculate pearson correlation coefficient between rows of input methylation values and ages
     @param meth_vals: the methylation value array
     @param ages:  the age vector
     @return: the correlation value

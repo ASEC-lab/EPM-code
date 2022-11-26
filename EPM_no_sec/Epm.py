@@ -153,7 +153,7 @@ class EPM:
         s0 = result[n:]
         return rates, s0
 
-    def both_steps_with_a_twist(self, sigma_ri_square):
+    def both_steps_no_division(self, sigma_ri_square):
         mult_val_list = []
         m = self.age_vals.shape[0]  # the number of individuals
         n = self.meth_vals.shape[0]  # the number of sites
@@ -272,7 +272,7 @@ class EPM:
         sigma_ri_squared = 1
 
         while i < iter_limit:
-            ages, sigma_ri_squared = self.both_steps_with_a_twist(sigma_ri_squared)
+            ages, sigma_ri_squared = self.both_steps_no_division(sigma_ri_squared)
             self.age_vals = ages
             i += 1
 

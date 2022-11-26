@@ -5,7 +5,6 @@ from Pyfhel import Pyfhel, PyCtxt
 '''
 Machine Learning Engine (MLE) implementation
 The MLE receives the encrypted input data from the DO and calculates the model
-with assistance from the CSP 
 '''
 
 # Global Definitions
@@ -52,6 +51,8 @@ class MLE:
         '''
 
     def check_noise_lvl(self, ctxt):
+        # check the noise level (number of remaining mult operations)
+        # as the data needs to be decrypted, mask it first
         ctxt += self.rand_mask
         lvl = self.csp.get_noise_level(ctxt)
         assert lvl > 0, "reached 0 noised budget"
@@ -106,60 +107,11 @@ class MLE:
         new_sum = self.safe_mul(sum_arr, encoded_mask_arr)
         return new_sum
 
-
-
-    def calc_beta_corollary1(self, m: int, n: int, age_vals: np.ndarray, Y: np.ndarray):
-        """
-        calc beta using corollary1
-        from the article https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-020-6606-0
-        @return: rates and s0 values
-        """
-
-        mult_val_list = []
-        result = np.zeros(2*n) # here will be the results of the final calculation
-        sigma_t = np.sum(age_vals)
-        sigma_t_square = np.sum(age_vals ** 2)
-        #gamma = 1 / (sigma_t ** 2 - m * sigma_t_square)
-        gamma = 1
-
-        # prepare the multiply values
-        for i in range(m):
-            mult_val_list.append((-1*m*age_vals[i] + sigma_t) * gamma)
-
-        for i in range(m):
-            mult_val_list.append((age_vals[i] * sigma_t - sigma_t_square) * gamma)
-
-        list_len_div2 = int(len(mult_val_list)/2)
-
-        #Y = self.meth_vals.flatten().transpose().astype(float)
-
-        # as described in the corollary, we should be able to calculate (XtX)^-1XtY
-        # without using heavy linear algebra calculations
-        # due to the structure of the matrix (XtX)^-1Xt which is made up of 2 expanded-diagonal matrices
-        # we can calculate the multiplication values for each of these matrices
-        # and then multiply the respective values in Y.
-        # for the upper part of the result: each i*m value in Y will be multiplied by the i'th value
-        # for the lower part of the result: each i*m value in Y will be multiplied by the i+list_len_div2 value
-
-        i = 0
-        temp_result_upper = Y.copy()
-        temp_result_lower = Y.copy()
-        while(i<list_len_div2):
-            temp_result_upper[i::list_len_div2] *= mult_val_list[i]
-            temp_result_lower[i::list_len_div2] *= mult_val_list[i + list_len_div2]
-            i += 1
-
-        # for the final step, each m values from the upper and lower matrices will be summed
-        # (in order to "emulate" matrix multiplication) and put into its respective location in the result
-        for j in range(n):
-            result[j] = np.sum(temp_result_upper[j * m:((j+1)*m)])
-            result[n + j] = np.sum(temp_result_lower[j * m:((j + 1) * m)])
-
-        rates = result[0:n]
-        s0 = result[n:]
-        return rates, s0
-
     def enc_array_same_num1(self, enc_num, size):
+        '''
+        an inefficient implementation. use the one below for faster performance
+        This one can probably be deleted
+        '''
         expected_copies = 1
         num_array = enc_num + 0
         arr_to_duplicate = enc_num + 0
@@ -231,7 +183,6 @@ class MLE:
         # sigma_t_square = self.calc_encrypted_array_sum(square_ages, m)
         sigma_t_square = self.csp.sum_array(square_ages)
         print("calc sigma_t_square ended at: ", time.perf_counter())
-        #gamma_denom = (sigma_t ** 2 - m * sigma_t_square)
         gamma_denom = sigma_t ** 2
         gamma_denom = ~gamma_denom
         gamma_denom -= self.safe_mul(m, sigma_t_square)
@@ -243,8 +194,8 @@ class MLE:
         all_sigma_t_arr = self.enc_array_same_num(sigma_t, m)
         all_sigma_t_square_arr = self.enc_array_same_num(sigma_t_square, m)
 
-        dec_sigma_t = self.csp.decrypt_arr(all_sigma_t_arr)
-        dec_sigma_t_s = self.csp.decrypt_arr(all_sigma_t_square_arr)
+        # for debug: dec_sigma_t = self.csp.decrypt_arr(all_sigma_t_arr)
+        # for debug: dec_sigma_t_s = self.csp.decrypt_arr(all_sigma_t_square_arr)
 
         #for i in range(m):
         #    all_sigma_t_arr += (sigma_t >> i)
@@ -254,8 +205,8 @@ class MLE:
         # in order to avoid the need to build the expanded diagonal matrices
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
         rates_assist_arr += all_sigma_t_arr
-        dec_rates_assist = self.csp.decrypt_arr(rates_assist_arr)
-        dec_all_sigma_t_arr = self.csp.decrypt_arr(all_sigma_t_arr)
+        # for debug: dec_rates_assist = self.csp.decrypt_arr(rates_assist_arr)
+        # for debug: dec_all_sigma_t_arr = self.csp.decrypt_arr(all_sigma_t_arr)
         rates_assist_arr = self.safe_mul(rates_assist_arr, sum_ri_square_arr)
 
         s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
@@ -272,10 +223,10 @@ class MLE:
                 shifted_vals = meth_vals << (i*m)
                 shift_dec =  self.csp.decrypt_arr(shifted_vals)
                 mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
-                dec_mult_assist = self.csp.decrypt_arr(mult_assist)
+                # for debug: dec_mult_assist = self.csp.decrypt_arr(mult_assist)
                 # r_val = self.calc_encrypted_array_sum(mult_assist, m)
                 r_val = self.csp.sum_array(mult_assist)
-                dec_r_val = self.csp.decrypt_arr(r_val)
+                # for debug: dec_r_val = self.csp.decrypt_arr(r_val)
                 #print("r_val: ", self.csp.decrypt_arr(r_val))
                 mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
                 # s0_val = self.calc_encrypted_array_sum(mult_assist, m)
@@ -288,10 +239,11 @@ class MLE:
         print("calc rates and s0 values ending at: ", time.perf_counter())
 
 
+        ''' for debug 
         dec_rates = self.csp.decrypt_arr(rates)
         dec_s0 = self.csp.decrypt_arr(s0_vals)
         # return dec_rates, dec_s0
-
+        '''
         return rates, s0_vals, gamma_denom
 
     def adapted_time_step(self, rates, s0_vals, meth_vals_list, n, m, gamma):
@@ -335,7 +287,7 @@ class MLE:
         for meth_vals in meth_vals_list:
             meth_vals_gamma = self.safe_mul(meth_vals, gamma_array)
 
-            # now we need to calc the nominator of the time step.
+            # now we need to calc the numerator of the time step.
             # which is: sum(r_i(meth_vals_gamma - s^0_i))
             # first lets calculate (meth_vals_gamma - s^0_i)
             p = meth_vals_gamma - calc_assist_s0
@@ -390,18 +342,3 @@ class MLE:
 
         return self.ages, sum_ri_squared
 
-        '''
-        R, r = self.gen_site_step_masks()
-        C, d = self.mask_matrices(R, r)
-        rates, s0_vals = self.site_step(C, d, R, r)
-        ages = self.time_step(rates, s0_vals)
-
-        MLE_to_DO_file = open("network/mle_to_do_{}.bin".format(self.FILE_COUNTER), "wb")
-        ages.tofile(MLE_to_DO_file, sep=',')
-        rates.tofile(MLE_to_DO_file, sep=',')
-        s0_vals.tofile(MLE_to_DO_file, sep=',')
-        MLE_to_DO_file.close()
-        self.FILE_COUNTER += 1
-
-        return ages, rates, s0_vals
-        '''

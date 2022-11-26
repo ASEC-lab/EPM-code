@@ -23,6 +23,7 @@ class CSP:
 
     def decrypt_arr(self, arr):
         # not for general use, only for debug and test
+        # should be removed in final implementation
         return self.__pyfhelCtxt.decryptInt(arr)
 
     def decode_arr(self, arr):
@@ -49,17 +50,6 @@ class CSP:
         arr_sum = np.array([np.sum(dec_arr)])
         enc_arr_sum = self.encrypt_array(arr_sum)
         return enc_arr_sum
-
-    '''
-    def dec_array_old(self, arr: np.ndarray) -> np.ndarray:
-        dec_arr = []
-        for row in arr:
-            dec_row = []
-            for num in row:
-                dec_row.append(self.pyfhelCtxt.decrypt(num, decode=True))
-            dec_arr.append(dec_row)
-        return dec_arr
-    '''
 
     def get_enc_n(self):
         return self.__n
