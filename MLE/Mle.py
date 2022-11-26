@@ -32,7 +32,7 @@ class MLE:
     def __init__(self, csp):
         self.csp = csp
         rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()//2))
-        self.rand_mask = csp.encrypt_array(rand_mask.astype(np.double))
+        self.rand_mask = csp.encrypt_array(rand_mask)
 
     def get_data_from_DO(self, meth_val_list, ages, m, n):
 
@@ -76,14 +76,12 @@ class MLE:
         @return: the multiplication result
         """
 
-        '''
         # mask before sending to CSP for noise level check
         if isinstance(ctxt1, PyCtxt):
             ctxt1 = self.check_noise_lvl(ctxt1)
         if isinstance(ctxt2, PyCtxt):
             ctxt2 = self.check_noise_lvl(ctxt2)
-        '''
-        ctxt1, ctxt2 = self.csp.ckks_align_mod_and_scale(ctxt1, ctxt2)
+
         result = ctxt1 * ctxt2
         result = ~result
         return result
@@ -161,35 +159,22 @@ class MLE:
         s0 = result[n:]
         return rates, s0
 
-    def enc_array_same_num(self, enc_num, size):
+    def enc_array_same_num1(self, enc_num, size):
         expected_copies = 1
         num_array = enc_num + 0
         arr_to_duplicate = enc_num + 0
-        result_array = None
-        i = 0
-        while i < size:
-            num_array = enc_num + 0
-            j = 1
-            while True:
-                num_array += num_array >> j
-                dec_num_array = self.csp.decrypt_arr(num_array)
-                j *= 2
-                if j*2 > (size-i):
-                    if (size-i) == 1:
-                        num_array = enc_num + 0
-                    break
-            if result_array is not None:
-                result_array += (num_array >> i)
-            else:
-                result_array = num_array
-            dec_result_array = self.csp.decrypt_arr(result_array)
-            i += j
-        return result_array
+        i = 1
+        while True:
+            num_array += arr_to_duplicate >> i
+            arr_to_duplicate = num_array
+            expected_copies += i
+            i *= 2
+            if expected_copies > size:
+                break
 
 
 
-
-    def enc_array_same_num1(self, enc_num, size):
+    def enc_array_same_num(self, enc_num, size):
         """
         create an encrypted array where all cells contain the same number
         @param enc_num: the number to duplicate
@@ -228,7 +213,7 @@ class MLE:
         """
 
         # create empty encrypted arrays to store the s0 and rate values
-        dummy_zero = np.zeros(1, dtype=np.double)
+        dummy_zero = np.zeros(1, dtype=np.int64)
         rates = self.csp.encrypt_array(dummy_zero)
         s0_vals = self.csp.encrypt_array(dummy_zero)
         all_sigma_t_arr = self.csp.encrypt_array(dummy_zero)
@@ -242,17 +227,15 @@ class MLE:
         # sigma_t_dec = self.csp.decrypt_arr(sigma_t)
         print("calc sigma_t ended at: ", time.perf_counter())
         square_ages = ages ** 2
-        square_ages = ~square_ages # re-liniarize after power as it seems this does not happen automatically
+        ~square_ages # re-liniarize after power as it seems this does not happen automatically
         # sigma_t_square = self.calc_encrypted_array_sum(square_ages, m)
         sigma_t_square = self.csp.sum_array(square_ages)
         print("calc sigma_t_square ended at: ", time.perf_counter())
         #gamma_denom = (sigma_t ** 2 - m * sigma_t_square)
         gamma_denom = sigma_t ** 2
         gamma_denom = ~gamma_denom
-        gamma_denom -= (m * sigma_t_square)
-        gamma_denom = ~gamma_denom
+        gamma_denom -= self.safe_mul(m, sigma_t_square)
         rates_assist_arr = -1 * m * ages
-        rates_assist_arr = ~rates_assist_arr
         s0_assist_arr = ages
 
         tic = time.perf_counter()
@@ -273,9 +256,8 @@ class MLE:
         rates_assist_arr += all_sigma_t_arr
         dec_rates_assist = self.csp.decrypt_arr(rates_assist_arr)
         dec_all_sigma_t_arr = self.csp.decrypt_arr(all_sigma_t_arr)
-        dec_sum_ri_square_arr = self.csp.decrypt_arr(sum_ri_square_arr)
         rates_assist_arr = self.safe_mul(rates_assist_arr, sum_ri_square_arr)
-        dec_rates_assist = self.csp.decrypt_arr(rates_assist_arr)
+
         s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
         s0_assist_arr -= all_sigma_t_square_arr
 
@@ -288,12 +270,13 @@ class MLE:
         for meth_vals in meth_vals_list:
             for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*m)
-                dec_shifted_vals = self.csp.decrypt_arr(shifted_vals)
-                dec_rates_assist_arr = self.csp.decrypt_arr(rates_assist_arr)
+                shift_dec =  self.csp.decrypt_arr(shifted_vals)
                 mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
                 dec_mult_assist = self.csp.decrypt_arr(mult_assist)
+                # r_val = self.calc_encrypted_array_sum(mult_assist, m)
                 r_val = self.csp.sum_array(mult_assist)
                 dec_r_val = self.csp.decrypt_arr(r_val)
+                #print("r_val: ", self.csp.decrypt_arr(r_val))
                 mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
                 # s0_val = self.calc_encrypted_array_sum(mult_assist, m)
                 s0_val = self.csp.sum_array(mult_assist)
@@ -329,7 +312,7 @@ class MLE:
             calc_assist_s0 += (s0_vals >> (i*m - 1))
             calc_assist_rates += (rates >> (i*m - 1))
 
-        mask = np.zeros(enc_array_size, dtype=np.double)
+        mask = np.zeros(enc_array_size, dtype=np.int64)
         for i in range(iterations):
             mask[i*m] = 1
         encoded_mask = self.csp.encode_array(mask)
@@ -339,8 +322,6 @@ class MLE:
         separated_s0 = calc_assist_s0 + 0
         separated_rates = calc_assist_rates + 0
 
-        self.csp.ckks_rescale_to_next(calc_assist_s0)
-        self.csp.ckks_rescale_to_next(calc_assist_rates)
         for i in range(1, m):
             calc_assist_s0 += (separated_s0 >> i)
             calc_assist_rates += (separated_rates >> i)
@@ -365,11 +346,11 @@ class MLE:
             # this should give us the required sum for each tj
 
             new_ages = r_p + 0
-            self.csp.ckks_rescale_to_next(r_p)
+
             for i in range(1, iterations):
                 new_ages += (r_p << i*m)
 
-            mask = np.ones(m, dtype=np.double)
+            mask = np.ones(m, dtype=np.int64)
             encoded_mask = self.csp.encode_array(mask)
             new_ages = self.safe_mul(new_ages, encoded_mask)
             #encrypted_mask = self.csp.encrypt_array(mask)
@@ -401,7 +382,7 @@ class MLE:
         """
 
         iter = 1
-        sum_ri_squared = self.csp.encrypt_array(np.array([1], dtype=np.double))
+        sum_ri_squared = 1
         for i in range(iter):
             rates, s0_vals, gamma_denom = self.adapted_site_step(self.m, self.n, self.ages, self.meth_val_list, sum_ri_squared)
             new_ages, sum_ri_squared = self.adapted_time_step(rates, s0_vals, self.meth_val_list, self.n, self.m, gamma_denom)
