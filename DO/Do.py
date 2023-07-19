@@ -14,7 +14,6 @@ Data owner (DO) implementation
 The DO provides the inputs to the MLE for the model calculation
 '''
 
-
 class DO:
     csp = None
     train_data = None

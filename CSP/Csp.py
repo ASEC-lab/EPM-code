@@ -2,19 +2,14 @@ from Pyfhel import PyCtxt, Pyfhel, PyPtxt
 import multiprocessing
 import numpy as np
 
-'''
-Crypto Service Provider (CSP) implementation
-The CSP assists in private key distribution and calculations on encrypted data
-note that encryption is not done via this class as the CSP should not see data that is not
-encrypted and masked
-'''
 
-
-class CSP:
+class Csp:
     __public_key = None
     __private_key = None
     __pyfhelCtxt = None
     __n = None
+
+
 
     def __init__(self):
         # generate the public/private keys upon init
@@ -40,7 +35,7 @@ class CSP:
         arr_encrypted = self.__pyfhelCtxt.encryptPtxt(arr_encoded)
         return arr_encrypted
 
-    def recrypt_array(self, arr:np.ndarray):
+    def recrypt_array(self, arr: np.ndarray):
         dec_arr = self.__pyfhelCtxt.decryptInt(arr)
         recrypted_arr = self.encrypt_array(dec_arr)
         return recrypted_arr
@@ -57,12 +52,11 @@ class CSP:
     def get_noise_level(self, enc_ctxt):
         return self.__pyfhelCtxt.noise_level(enc_ctxt)
 
-
     def __gen_enc_keys(self):
         self.__pyfhelCtxt = Pyfhel()
-        #self.__pyfhelCtxt.contextGen("bfv", n=2 ** 13, t_bits=48, sec=128)
+        # self.__pyfhelCtxt.contextGen("bfv", n=2 ** 13, t_bits=48, sec=128)
         self.__pyfhelCtxt.contextGen("bfv", n=2 ** 14, t_bits=60, sec=128)  # t=65537, sec=128)
-        #self.__pyfhelCtxt.contextGen("ckks", n=2 ** 14, scale=2**30, qi=[60,30 ,30, 30, 60])
+        # self.__pyfhelCtxt.contextGen("ckks", n=2 ** 14, scale=2**30, qi=[60,30 ,30, 30, 60])
         self.__pyfhelCtxt.keyGen()
         self.__pyfhelCtxt.rotateKeyGen()
         self.__pyfhelCtxt.relinKeyGen()
@@ -70,5 +64,82 @@ class CSP:
         self.__pyfhelCtxt.save_rotate_key("../rotkey.pk")
         self.__pyfhelCtxt.save_context("../context.con")
 
+def generate_P() -> Pyfhel:
+    P = Pyfhel()
+    bfv_params = {
+        'scheme': 'BFV',  # can also be 'bfv'
+        'n': 2 ** 14,  # Polynomial modulus degree, the num. of slots per plaintext,
+        #  of elements to be encoded in a single ciphertext in a
+        #  2 by n/2 rectangular matrix (mind this shape for rotations!)
+        #  Typ. 2^D for D in [10, 16]
+        't': 65537,  # Plaintext modulus. Encrypted operations happen modulo t
+        #  Must be prime such that t-1 be divisible by 2^N.
+        't_bits': 20,  # Number of bits in t. Used to generate a suitable value
+        #  for t. Overrides t if specified.
+        'sec': 128,  # Security parameter. The equivalent length of AES key in bits.
+        #  Sets the ciphertext modulus q, can be one of {128, 192, 256}
+        #  More means more security but also slower computation.
+    }
+    P.contextGen(**bfv_params)  # Generate context for bfv scheme
+    P.keyGen()  # Key Generation: generates a pair of public/secret keys
+    P.rotateKeyGen()  # Rotate key generation --> Allows rotation/shifting
+    P.relinKeyGen()  # Relinearization key generation
+    return P
+
+def main():
+    P = Pyfhel()
+    bfv_params = {
+        'scheme': 'BFV',  # can also be 'bfv'
+        'n': 2 ** 14,  # Polynomial modulus degree, the num. of slots per plaintext,
+        #  of elements to be encoded in a single ciphertext in a
+        #  2 by n/2 rectangular matrix (mind this shape for rotations!)
+        #  Typ. 2^D for D in [10, 16]
+        't': 65537,  # Plaintext modulus. Encrypted operations happen modulo t
+        #  Must be prime such that t-1 be divisible by 2^N.
+        't_bits': 20,  # Number of bits in t. Used to generate a suitable value
+        #  for t. Overrides t if specified.
+        'sec': 128,  # Security parameter. The equivalent length of AES key in bits.
+        #  Sets the ciphertext modulus q, can be one of {128, 192, 256}
+        #  More means more security but also slower computation.
+    }
+    P.contextGen(**bfv_params)  # Generate context for bfv scheme
+    P.keyGen()  # Key Generation: generates a pair of public/secret keys
+    P.rotateKeyGen()  # Rotate key generation --> Allows rotation/shifting
+    P.relinKeyGen()  # Relinearization key generation
+
+    A = np.arange(10, dtype=np.int64)
+    B = np.arange(10, dtype=np.int64) + 10
+
+    p5 = np.asarray([5], dtype=np.int64)
+    p3 = np.asarray([3], dtype=np.int64)
+
+    p5e = P.encryptInt(p5)
+    p3e = P.encryptInt(p3)
+
+    result = P.mod(p5e, p3e)
+    x=2
 
 
+    p_5 = P.encodeInt(A)
+    Ae = P.encryptInt(A)
+    ctxt_mod = P.mod(Ae, 2)
+    ptxt_mod = P.decrypt(ctxt_mod)
+
+    Be = P.encryptInt(B)
+    Ce = np.add(Ae,Be)
+    C = P.decrypt(Ce)
+
+
+    x = 2
+    M = np.arange(100).reshape(10, 10).astype(np.int64)
+    CSP = Csp()
+    B = CSP.encode_array(arr=A)
+    # D = CSP.encode_array(arr=M)
+    print(CSP.decode_arr(B))
+
+    C = CSP.encrypt_array(arr=A)
+    print(CSP.decrypt_arr(arr=C))
+
+
+if __name__ == '__main__':
+    main()
