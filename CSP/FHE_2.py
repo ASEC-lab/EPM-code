@@ -4,7 +4,9 @@ import numpy as np
 from time import time
 from sympy.ntheory.modular import crt
 import math
-from Cipher import Cipher, Decipher
+from Cipher import Cipher
+from Decipher import Decipher
+from copy import deepcopy
 
 DEBUG = True
 MIN = 13
@@ -46,11 +48,6 @@ def pyfhel_builder(params: dict) -> Pyfhel:
 
 def product(array):
     return math.prod([int(x) for x in array])
-    # p = 1
-    # for value in array:
-    #     _value = int(value)
-    #     p = p*_value
-    # return p
 
 
 def factorial_wobbly(array):
@@ -128,17 +125,18 @@ class FHE:
         result = [self.decrypt_1D(ciphers[i]) for i in range(len(ciphers))]
         return np.asarray(result, dtype=object)
 
-    def decrypt_1D(self, cipher: Cipher, name: str = None) -> Decipher:
+    def decrypt_1D(self, cipher: Cipher) -> Decipher:
         values = np.asarray([self.E[i].decrypt(cipher.values[i])[0] for i in range(self.length)], dtype=np.int64)
-        return Decipher(values=values, N=self.N, primes=self.Primes, name=name)
+        return Decipher(values=values, N=self.N, primes=self.Primes, name=cipher.name)
 
-    def encrypt_1D(self, v: Decipher) -> Cipher:
+    def encrypt_1D(self, v: Decipher, _name: str = None) -> Cipher:
         ciphers = []
         if self.scheme == BGV:
             ciphers = [self.E[i].encryptBGV(np.asarray([v.moduli[i]], dtype=np.int64)) for i in range(self.length)]
         elif self.scheme == BFV:
             ciphers = [self.E[i].encryptInt(np.asarray([v.moduli[i]], dtype=np.int64)) for i in range(self.length)]
         else:
+            name = _name if _name is not None else v.name
             print("encrypt: unknown scheme. expected {} or {}, got {}".format(BFV, BGV, self.scheme))
         return Cipher(ciphers=ciphers, name=v.name)
 
@@ -146,23 +144,14 @@ class FHE:
         result = [self.encrypt_1D(Vector[i]) for i in range(len(Vector))]
         return np.asarray(result, dtype=object)
 
-    def validate_1D(self, cipher: Cipher) -> np.int64:
-        decipher = self.decrypt_1D(cipher=cipher)
-        return decipher.to_num()
-
-    def validate_2D(self, ciphers: List[Cipher]) -> np.ndarray[np.int64]:
-        nums = [crt_to_num(moduli=self.decrypt_2D(ciphers=ciphers)[i], dividers=self.Primes) for i in
-                range(len(ciphers))]
-        return np.asarray(nums, dtype=np.int64)
-
 
 def test():
     # init
 
     F = FHE(scheme=BGV, number_of_primes=4)
     T = F.get_primes()
-    a = 15600
-    b = -1246
+    a = 25
+    b = 37
     ab_square = a * b
 
     a_decipher = Decipher(number=a, primes=T, N=F.N, name='a')
@@ -173,39 +162,42 @@ def test():
     # encrypt
     Pa = F.encrypt_1D(v=a_decipher)
     Pb = F.encrypt_1D(v=b_decipher)
-    Pab = Pa * Pb
-    # Pa = F.encrypt_1D(v=a_decipher)
-    # Pb = F.encrypt_1D(Vector=b_crt)
 
     # decrypt
     Ra = F.decrypt_1D(cipher=Pa)
     Rb = F.decrypt_1D(cipher=Pb)
-    Rab = F.decrypt_1D(cipher=Pab)
-    Rab.name = 'ab'
 
-    Ra_num, Rb_num = Ra.to_num(), Rb.to_num()
-    Rab_num = Rab.to_num()
 
     # validate encryption
-    print("a encryption: {}".format("SUCCESS" if Ra_num == a else "FAIL"))
-    print("b encryption: {}".format("SUCCESS" if Rb_num == b else "FAIL"))
-    print("b encryption: {}".format("SUCCESS" if Rb_num == b else "FAIL"))
+    print("a encryption: {}".format("SUCCESS" if Ra.to_num() == a else "FAIL"))
+    print("b encryption: {}".format("SUCCESS" if Rb.to_num() == b else "FAIL"))
 
     # check addition
     P_add = Pa + Pb
     R_add = F.decrypt_1D(cipher=P_add)
-    result_add = R_add.to_num()
 
     # check multiplication
-    P_ab = F.encrypt_1D(v=Decipher(number=a * b, primes=T, N=F.N, name='ab'))
+    P_ab = F.encrypt_1D(v=Decipher(number=a * b, primes=T, N=F.N, name='a*b'))
     P_ab_squared = P_ab * P_ab
     P_ab_squared.name = 'a^2 b^2 test'
-    R_square_test = F.decrypt_1D(cipher=P_ab_squared, name='a^2 b^2 test')
+    R_square_test = F.decrypt_1D(cipher=P_ab_squared)
+
+    #a^2:
+    Pa_2 = Pa * Pa
+    Ra_2 = F.decrypt_1D(cipher=Pa_2)
+
+    #b^2:
+    Pb_2 = Pb * Pb
+    Rb_2 = F.decrypt_1D(cipher=Pb_2)
 
     P_mul = Pa * Pb
+    # P_mul1 = deepcopy(P_mul)
+    # P_mul2 = deepcopy(P_mul)
     P_mul_squared = P_mul * P_mul
+    P_mul_squared.name = 'a^2 b^2'
     R_mul = F.decrypt_1D(cipher=P_mul)
-    R_mul_squared = F.decrypt_1D(cipher=P_mul_squared, name='a_2*b_2')
+    R_mul_squared = F.decrypt_1D(cipher=P_mul_squared)
+    the_num = R_mul_squared.to_num()
 
     # check subtraction
     P_sub = Pb - Pa
@@ -213,8 +205,8 @@ def test():
     result_sub = R_sub.to_num()
 
     print("------------Addition:-------------")
-    print("{}".format("SUCCESS" if result_add == a + b else "FAILED"))
-    print("result: {}, Truth: {}".format(result_add, a + b))
+    print("{}".format("SUCCESS" if R_add.to_num() == a + b else "FAILED"))
+    print("result: {}, Truth: {}".format(R_add.to_num(), a + b))
     print("CRT fields (result): {}".format(R_add))
 
     print("------------Subtraction:-------------")
@@ -222,12 +214,22 @@ def test():
     print("result: {}, Truth: {}".format(result_sub, b - a))
     print("CRT fields (result): {}".format(R_sub))
 
-    print("------------Multiplication (1):-------------")
+    print("------------Multiplication (ab):-------------")
     print("{}".format("SUCCESS" if R_mul.to_num() == a * b else "FAILED"))
     print("result: {}, Truth: {}".format(R_mul.to_num(), a * b))
     print("CRT fields (result): {}".format(R_mul))
 
-    print("------------Multiplication (2):-------------")
+    print("------------Multiplication (a^2):-------------")
+    print("{}".format("SUCCESS" if Ra_2.to_num() == a * a else "FAILED"))
+    print("result: {}, Truth: {}".format(Ra_2.to_num(), a * a))
+    print("CRT fields (result): {}".format(Ra_2))
+
+    print("------------Multiplication (b^2):-------------")
+    print("{}".format("SUCCESS" if Rb_2.to_num() == b * b else "FAILED"))
+    print("result: {}, Truth: {}".format(Rb_2.to_num(), b * b))
+    print("CRT fields (result): {}".format(Rb_2))
+
+    print("------------Multiplication (a^2 * b^2):-------------")
     print("{}, bit size: {}".format("SUCCESS" if R_mul_squared.to_num() == (a * b) ** 2 else "FAILED",
                                     bit_size(R_mul_squared.to_num())))
     print("result: {}, Truth: {}".format(R_mul_squared.to_num(), (a * b) ** 2))
