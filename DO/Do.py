@@ -4,6 +4,8 @@ from DataHandler.DataFormat import format_array_for_enc, pearson_correlation
 from MLE.Mle import MLE
 import time
 import logging, sys
+from Math_Utils.MathUtils import read_primes_from_file
+from CSP.Csp import CSP
 
 # debug print level. Mainly used for function time measurement printing
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
@@ -16,13 +18,10 @@ The DO provides the inputs to the MLE for the model calculation
 
 
 class DO:
-    csp = None
-    train_data = None
-    test_data = None
 
-    def __init__(self, csp):
-        self.csp = csp
-
+    def __init__(self):
+        self.train_data = None
+        self.test_data = None
 
     def read_train_data(self):
         """
@@ -33,7 +32,7 @@ class DO:
         full_train_data = data_sets.get_example_train_data()
         return full_train_data
 
-    def encrypt_train_data(self, meth_vals, ages):
+    def encrypt_train_data(self, meth_vals, ages, csp):
         """
         Prepare and encrypt the training data for sending to MLE
 
@@ -43,7 +42,7 @@ class DO:
         """
 
         encrypted_meth_vals = {}
-        enc_array_size = self.csp.get_enc_n() // 2
+        enc_array_size = csp.get_enc_n() // 2
         m = meth_vals.shape[1]
 
         # as the encrypted data is stored in a 1X1 vector format, need to convert the large methylation value
@@ -70,11 +69,11 @@ class DO:
 
         # create the new encrypted vector dictionary
         print("Encrypting methylation values")
-        encrypted_vector_list = np.apply_along_axis(self.csp.encrypt_array, axis=1, arr=meth_vals_new_shape)
+        encrypted_vector_list = np.apply_along_axis(csp.encrypt_array, axis=1, arr=meth_vals_new_shape)
 
         # encrypt the ages
         print("Encrypting ages")
-        encrypted_ages = self.csp.encrypt_array(ages)
+        encrypted_ages = csp.encrypt_array(ages)
 
         return encrypted_vector_list, encrypted_ages
 
@@ -126,23 +125,31 @@ class DO:
         logging.debug('Formatting methylation values and ages')
         formatted_meth_values = format_array_for_enc(correlated_meth_vals)
         formatted_ages = format_array_for_enc(train_ages)
-        logging.debug('Encrypting ages and methylation  values')
-        tic = time.perf_counter()
-
-        enc_meth_vals, enc_ages = self.encrypt_train_data(formatted_meth_values, formatted_ages)
-        toc = time.perf_counter()
-        logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
-
         m = formatted_meth_values.shape[1]
         n = formatted_meth_values.shape[0]
-        mle = MLE(self.csp)
-        mle.get_data_from_DO(enc_meth_vals, enc_ages, m, n)
-        new_ages, sum_ri_squared = mle.calc_model()
-        decrypt_ages = self.csp.decrypt_arr(new_ages)
-        decrypt_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)
 
-        final_ages = decrypt_ages/decrypt_sum_ri_squared[0]
+        primes = read_primes_from_file("primes.txt")
+        for i in range(1):
+            csp = CSP(primes[i])
+            encoded_n = csp.encode_array(np.array([n]))
+            encoded_m = csp.encode_array(np.array([m]))
 
+            logging.debug('Encrypting ages and methylation  values')
+            tic = time.perf_counter()
+
+            enc_meth_vals, enc_ages = self.encrypt_train_data(formatted_meth_values, formatted_ages, csp)
+            toc = time.perf_counter()
+            logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
+
+            mle = MLE(csp)
+            mle.get_data_from_DO(enc_meth_vals, enc_ages, m, n, encoded_m, encoded_n)
+            new_ages, sum_ri_squared = mle.calc_model()
+            decrypt_ages = csp.decrypt_arr(new_ages)
+            decrypt_sum_ri_squared = csp.decrypt_arr(sum_ri_squared)
+
+
+        #final_ages = decrypt_ages/decrypt_sum_ri_squared[0]
+        final_ages = 0
         return final_ages
 
 

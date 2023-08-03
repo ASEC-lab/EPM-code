@@ -1,7 +1,6 @@
 from unittest import TestCase
 from CSP.Csp import CSP
 from MLE.Mle import MLE
-from DataHandler.DataFormat import enc_array
 import numpy as np
 from Pyfhel import Pyfhel
 

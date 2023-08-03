@@ -33,6 +33,7 @@ def restore_array(arr: np.ndarray) -> np.ndarray:
     return arr/(10 ** FLOATING_DIGIT_ROUND)
 
 
+'''
 def enc_array(arr: np.ndarray):
     assert arr.ndim == 1, "Only 1 dimensional arrays are supported"
     pyfhel_server = Pyfhel()
@@ -42,7 +43,7 @@ def enc_array(arr: np.ndarray):
     arr_encoded = pyfhel_server.encodeInt(arr)
     arr_encrypted = pyfhel_server.encryptPtxt(arr_encoded)
     return arr_encrypted
-
+'''
 
 def pearson_correlation(meth_vals: np.array, ages: np.array) -> np.array:
     """

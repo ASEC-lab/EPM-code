@@ -18,27 +18,26 @@ RANDOM_MATRIX_MAX_VAL = 100
 
 class MLE:
 
-    csp = None
-    ages = None
-    meth_val_list = None
-    m = None
-    n = None
-    rand_mask = None
-    recrypt_count = 0
-
-    FILE_COUNTER = 0
-
     def __init__(self, csp):
+
+        self.ages = None
+        self.meth_val_list = None
+        self.m = None
+        self.n = None
+        self.recrypt_count = 0
+        self.FILE_COUNTER = 0
         self.csp = csp
         rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()//2))
         self.rand_mask = csp.encrypt_array(rand_mask)
 
-    def get_data_from_DO(self, meth_val_list, ages, m, n):
+    def get_data_from_DO(self, meth_val_list, ages, m, n, encoded_m, encoded_n):
 
         self.meth_val_list = meth_val_list
         self.ages = ages
         self.m = m
         self.n = n
+        self.encoded_m = encoded_m
+        self.encoded_n = encoded_n
 
         '''
         DO_to_MLE_file = open("network/do_to_mle_{}.bin".format(self.FILE_COUNTER), "wb")
@@ -77,11 +76,11 @@ class MLE:
         @return: the multiplication result
         """
 
-        # mask before sending to CSP for noise level check
-        if isinstance(ctxt1, PyCtxt):
-            ctxt1 = self.check_noise_lvl(ctxt1)
-        if isinstance(ctxt2, PyCtxt):
-            ctxt2 = self.check_noise_lvl(ctxt2)
+        # mask before sending to CSP for noise level check - doesn't work with BGV
+       # if isinstance(ctxt1, PyCtxt):
+       #     ctxt1 = self.check_noise_lvl(ctxt1)
+       # if isinstance(ctxt2, PyCtxt):
+       #     ctxt2 = self.check_noise_lvl(ctxt2)
 
         result = ctxt1 * ctxt2
         result = ~result
@@ -150,7 +149,7 @@ class MLE:
 
         return num_array
 
-    def adapted_site_step(self, m: int, n: int, ages, meth_vals_list, sum_ri_square):
+    def adapted_site_step(self, ages, meth_vals_list, sum_ri_square):
         """
         The EPM site step algorithm. This step calculates beta = (XtX)^-1 XtY using the conclusions from
         lemma 3 / corollary 1 in https://bmcgenomics.biomedcentral.com/articles/10.1186/s12864-020-6606-0
@@ -171,7 +170,7 @@ class MLE:
         all_sigma_t_arr = self.csp.encrypt_array(dummy_zero)
         all_sigma_t_square_arr = self.csp.encrypt_array(dummy_zero)
 
-        sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, n)
+        sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, self.n)
 
         print("calc sigma_t starting at: ", time.perf_counter())
         # sigma_t = self.calc_encrypted_array_sum(ages, m)
@@ -191,8 +190,8 @@ class MLE:
 
         tic = time.perf_counter()
         print("calc all_sigma arrays starting at: ", tic)
-        all_sigma_t_arr = self.enc_array_same_num(sigma_t, m)
-        all_sigma_t_square_arr = self.enc_array_same_num(sigma_t_square, m)
+        all_sigma_t_arr = self.enc_array_same_num(sigma_t, self.m)
+        all_sigma_t_square_arr = self.enc_array_same_num(sigma_t_square, self.m)
 
         # for debug: dec_sigma_t = self.csp.decrypt_arr(all_sigma_t_arr)
         # for debug: dec_sigma_t_s = self.csp.decrypt_arr(all_sigma_t_square_arr)
@@ -215,12 +214,12 @@ class MLE:
         print("calc rates and s0 values starting at: ", time.perf_counter())
         # calculate the rate and s0 values
         enc_array_size = self.csp.get_enc_n() // 2
-        elements_in_vector = enc_array_size // m
+        elements_in_vector = enc_array_size // self.m
 
         meth_val_count = 0
         for meth_vals in meth_vals_list:
             for i in range(0, elements_in_vector):
-                shifted_vals = meth_vals << (i*m)
+                shifted_vals = meth_vals << (i*self.m)
                 shift_dec =  self.csp.decrypt_arr(shifted_vals)
                 mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
                 # for debug: dec_mult_assist = self.csp.decrypt_arr(mult_assist)
@@ -246,7 +245,7 @@ class MLE:
         '''
         return rates, s0_vals, gamma_denom
 
-    def adapted_time_step(self, rates, s0_vals, meth_vals_list, n, m, gamma):
+    def adapted_time_step(self, rates, s0_vals, meth_vals_list, gamma):
 
         # calc the matrix  S = (S_ij - s0_i)*r_i
         # the main issue here is that S_ij is represented as long vectors which cannot be transposed as
@@ -258,15 +257,15 @@ class MLE:
         # without it, the variable on the left side of the = will just be a pointer to the one on the right
         calc_assist_s0 = s0_vals + 0
         calc_assist_rates = rates + 0
-        iterations = min(m, (enc_array_size // m))-1
+        iterations = min(self.m, (enc_array_size // self.m))-1
 
         for i in range(1, iterations):
-            calc_assist_s0 += (s0_vals >> (i*m - 1))
-            calc_assist_rates += (rates >> (i*m - 1))
+            calc_assist_s0 += (s0_vals >> (i*self.m - 1))
+            calc_assist_rates += (rates >> (i*self.m - 1))
 
         mask = np.zeros(enc_array_size, dtype=np.int64)
         for i in range(iterations):
-            mask[i*m] = 1
+            mask[i*self.m] = 1
         encoded_mask = self.csp.encode_array(mask)
         calc_assist_s0 = self.safe_mul(calc_assist_s0, encoded_mask)
         calc_assist_rates = self.safe_mul(calc_assist_rates, encoded_mask)
@@ -274,7 +273,7 @@ class MLE:
         separated_s0 = calc_assist_s0 + 0
         separated_rates = calc_assist_rates + 0
 
-        for i in range(1, m):
+        for i in range(1, self.m):
             calc_assist_s0 += (separated_s0 >> i)
             calc_assist_rates += (separated_rates >> i)
 
@@ -302,7 +301,7 @@ class MLE:
             for i in range(1, iterations):
                 new_ages += (r_p << i*m)
 
-            mask = np.ones(m, dtype=np.int64)
+            mask = np.ones(self.m, dtype=np.int64)
             encoded_mask = self.csp.encode_array(mask)
             new_ages = self.safe_mul(new_ages, encoded_mask)
             #encrypted_mask = self.csp.encrypt_array(mask)
@@ -336,8 +335,8 @@ class MLE:
         iter = 1
         sum_ri_squared = 1
         for i in range(iter):
-            rates, s0_vals, gamma_denom = self.adapted_site_step(self.m, self.n, self.ages, self.meth_val_list, sum_ri_squared)
-            new_ages, sum_ri_squared = self.adapted_time_step(rates, s0_vals, self.meth_val_list, self.n, self.m, gamma_denom)
+            rates, s0_vals, gamma_denom = self.adapted_site_step(self.ages, self.meth_val_list, sum_ri_squared)
+            new_ages, sum_ri_squared = self.adapted_time_step(rates, s0_vals, self.meth_val_list, gamma_denom)
             self.ages = new_ages
 
         return self.ages, sum_ri_squared
