@@ -21,7 +21,7 @@ class Cipher:
                       name=self.name + '+' + other.name)
 
     def __mul__(self, other):
-        return Cipher(ciphers=[self.values[i] * other.values[i] for i in range(self.length)],
+        return Cipher(ciphers=[~self.values[i] * ~other.values[i] for i in range(self.length)],
                       name=self.name + '*' + other.name)
 
     def __sub__(self, other):

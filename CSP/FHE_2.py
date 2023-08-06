@@ -92,7 +92,7 @@ class FHE:
         _Primes = get_primes()
 
         for i in range(number_of_primes):
-            _t, _n = get_next_prime(index=i+OFFSET, Primes=_Primes)
+            _t, _n = get_next_prime(index=i + OFFSET, Primes=_Primes)
             params['t'] = _t
             params['n'] = 2 ** _n
             F = pyfhel_builder(params=params)
@@ -148,10 +148,10 @@ class FHE:
 def test():
     # init
 
-    F = FHE(scheme=BGV, number_of_primes=4)
+    F = FHE(scheme=BFV, number_of_primes=4)
     T = F.get_primes()
-    a = 25
-    b = 37
+    a = 25250
+    b = -3700
     ab_square = a * b
 
     a_decipher = Decipher(number=a, primes=T, N=F.N, name='a')
@@ -167,7 +167,6 @@ def test():
     Ra = F.decrypt_1D(cipher=Pa)
     Rb = F.decrypt_1D(cipher=Pb)
 
-
     # validate encryption
     print("a encryption: {}".format("SUCCESS" if Ra.to_num() == a else "FAIL"))
     print("b encryption: {}".format("SUCCESS" if Rb.to_num() == b else "FAIL"))
@@ -182,17 +181,15 @@ def test():
     P_ab_squared.name = 'a^2 b^2 test'
     R_square_test = F.decrypt_1D(cipher=P_ab_squared)
 
-    #a^2:
+    # a^2:
     Pa_2 = Pa * Pa
     Ra_2 = F.decrypt_1D(cipher=Pa_2)
 
-    #b^2:
+    # b^2:
     Pb_2 = Pb * Pb
     Rb_2 = F.decrypt_1D(cipher=Pb_2)
 
     P_mul = Pa * Pb
-    # P_mul1 = deepcopy(P_mul)
-    # P_mul2 = deepcopy(P_mul)
     P_mul_squared = P_mul * P_mul
     P_mul_squared.name = 'a^2 b^2'
     R_mul = F.decrypt_1D(cipher=P_mul)
@@ -236,6 +233,48 @@ def test():
     print("CRT fields (result): {}".format(R_mul_squared))
 
 
+def test_2():
+    F = FHE(scheme=BFV, number_of_primes=4)
+    T = F.get_primes()
+    a = np.random.randint(-100, -1)
+    Pa = F.encrypt_1D(Decipher(N=F.N, primes=T, number=a))
+    one = F.encrypt_1D(Decipher(N=F.N, primes=T, number=1))
+    P = one
+
+    for i in range(0, 20):
+        P = P * Pa
+        R = F.decrypt_1D(P)
+        print("iter: {}, truth: {}, result: {}".format(i, a ** (i + 1), R.to_num()))
+
+
+def test_3():
+    F = FHE(scheme=BGV, number_of_primes=4)
+    T = F.get_primes()
+    a = np.random.randint(-100, 100)
+    b = np.random.randint(-100, 100)
+    c = np.random.randint(-100, 100)
+    d = np.random.randint(-100, 100)
+    e = np.random.randint(-100, 100)
+
+    Pa = F.encrypt_1D(Decipher(N=F.N, primes=T, number=a))
+    Pb = F.encrypt_1D(Decipher(N=F.N, primes=T, number=b))
+    Pc = F.encrypt_1D(Decipher(N=F.N, primes=T, number=c))
+    Pd = F.encrypt_1D(Decipher(N=F.N, primes=T, number=d))
+    Pe = F.encrypt_1D(Decipher(N=F.N, primes=T, number=e))
+
+    P1 = Pa * Pb
+    print(F.decrypt_1D(P1).to_num(), a * b)
+
+    P2 = P1 * Pc
+    print(F.decrypt_1D(P2).to_num(), a * b * c)
+
+    P3 = P2 * Pd
+    print(F.decrypt_1D(P3).to_num(), a * b * c * d)
+
+    P4 = P3 * Pe
+    print(F.decrypt_1D(P4).to_num(), a * b * c * d * e)
+
+
 if __name__ == '__main__':
     print("FHE4")
-    test()
+    test_3()
