@@ -52,16 +52,16 @@ class MLE:
     def check_noise_lvl(self, ctxt):
         # check the noise level (number of remaining mult operations)
         # as the data needs to be decrypted, mask it first
-        ctxt += self.rand_mask
+        #ctxt += self.rand_mask
         lvl = self.csp.get_noise_level(ctxt)
-        assert lvl > 0, "reached 0 noised budget"
-        '''
+        #assert lvl > 0, "reached 0 noised budget"
+
         if lvl == 0:
-            print("Recrypting")
             ctxt = self.csp.recrypt_array(ctxt)
             self.recrypt_count += 1
-        '''
-        ctxt -= self.rand_mask
+            print("Recrypting. New noise level: ", self.csp.get_noise_level(ctxt))
+
+        #ctxt -= self.rand_mask
         return ctxt
 
     def safe_mul(self, ctxt1, ctxt2):
@@ -77,16 +77,16 @@ class MLE:
         """
 
         # mask before sending to CSP for noise level check - doesn't work with BGV
-       # if isinstance(ctxt1, PyCtxt):
-       #     ctxt1 = self.check_noise_lvl(ctxt1)
-       # if isinstance(ctxt2, PyCtxt):
-       #     ctxt2 = self.check_noise_lvl(ctxt2)
+        if isinstance(ctxt1, PyCtxt):
+            ctxt1 = self.check_noise_lvl(ctxt1)
+        if isinstance(ctxt2, PyCtxt):
+            ctxt2 = self.check_noise_lvl(ctxt2)
 
         result = ctxt1 * ctxt2
         result = ~result
         return result
 
-    def calc_encrypted_array_sum(self, arr: np.ndarray, arr_len: int):
+    def calc_encrypted_array_sum(self, arr, arr_len: int):
         """
         sum an encrypted array
         @param arr: the array to sum
@@ -94,16 +94,28 @@ class MLE:
         @return: an encrypted array with the sum in the first cell
         """
         sum_arr = arr
-        dec_arr = self.csp.decrypt_arr(arr)
-        shift = arr_len
-        while shift > 1:
-            shift = shift // 2
-            add_arr = sum_arr << shift
+        #for debug
+        #summed_arr = self.csp.sum_array(arr)
+        #dec_arr = self.csp.decrypt_arr(summed_arr)
+        #print("dec_arr old algorithm: ", dec_arr[0])
+        # no more debug
+
+
+        shift = 0
+        while shift < arr_len:
+            shift +=1
+            add_arr = arr << shift
             sum_arr = sum_arr + add_arr
 
         mask_arr = np.array([1])
         encoded_mask_arr = self.csp.encode_array(mask_arr)
         new_sum = self.safe_mul(sum_arr, encoded_mask_arr)
+
+        # for debug
+        #dec_arr = self.csp.decrypt_arr(new_sum)
+        #print("dec_arr this algorithm: ", dec_arr[0])
+        #no more debug
+
         return new_sum
 
     def enc_array_same_num1(self, enc_num, size):
@@ -167,25 +179,30 @@ class MLE:
         dummy_zero = np.zeros(1, dtype=np.int64)
         rates = self.csp.encrypt_array(dummy_zero)
         s0_vals = self.csp.encrypt_array(dummy_zero)
-        all_sigma_t_arr = self.csp.encrypt_array(dummy_zero)
-        all_sigma_t_square_arr = self.csp.encrypt_array(dummy_zero)
+        #all_sigma_t_arr = self.csp.encrypt_array(dummy_zero)
+        #all_sigma_t_square_arr = self.csp.encrypt_array(dummy_zero)
 
         sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, self.n)
 
         print("calc sigma_t starting at: ", time.perf_counter())
-        # sigma_t = self.calc_encrypted_array_sum(ages, m)
-        sigma_t = self.csp.sum_array(ages)
+        sigma_t = self.calc_encrypted_array_sum(ages, self.m)
+        # sigma_t = self.csp.sum_array(ages)
         # sigma_t_dec = self.csp.decrypt_arr(sigma_t)
         print("calc sigma_t ended at: ", time.perf_counter())
         square_ages = ages ** 2
         ~square_ages # re-liniarize after power as it seems this does not happen automatically
-        # sigma_t_square = self.calc_encrypted_array_sum(square_ages, m)
-        sigma_t_square = self.csp.sum_array(square_ages)
+        sigma_t_square = self.calc_encrypted_array_sum(square_ages, self.m)
+        #sigma_t_square = self.csp.sum_array(square_ages)
         print("calc sigma_t_square ended at: ", time.perf_counter())
         gamma_denom = sigma_t ** 2
         gamma_denom = ~gamma_denom
-        gamma_denom -= self.safe_mul(m, sigma_t_square)
-        rates_assist_arr = -1 * m * ages
+        gamma_denom -= self.safe_mul(self.m, sigma_t_square)
+
+        rates_assist_arr = -1 * self.m * ages
+        # dec_rates_assist_arr = self.csp.decrypt_arr(rates_assist_arr)
+        # dec_ages = self.csp.decrypt_arr(ages)
+        # dec_ages_m = self.csp.decrypt_arr(self.m * ages)
+
         s0_assist_arr = ages
 
         tic = time.perf_counter()
@@ -214,22 +231,23 @@ class MLE:
         print("calc rates and s0 values starting at: ", time.perf_counter())
         # calculate the rate and s0 values
         enc_array_size = self.csp.get_enc_n() // 2
-        elements_in_vector = enc_array_size // self.m
+        #elements_in_vector = enc_array_size // self.m   # is this a mistake?
+        elements_in_vector = self.n
 
         meth_val_count = 0
         for meth_vals in meth_vals_list:
             for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*self.m)
-                shift_dec =  self.csp.decrypt_arr(shifted_vals)
+                shift_dec = self.csp.decrypt_arr(shifted_vals)
                 mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
                 # for debug: dec_mult_assist = self.csp.decrypt_arr(mult_assist)
-                # r_val = self.calc_encrypted_array_sum(mult_assist, m)
-                r_val = self.csp.sum_array(mult_assist)
+                r_val = self.calc_encrypted_array_sum(mult_assist, self.m)
+                # r_val = self.csp.sum_array(mult_assist)
                 # for debug: dec_r_val = self.csp.decrypt_arr(r_val)
                 #print("r_val: ", self.csp.decrypt_arr(r_val))
                 mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
-                # s0_val = self.calc_encrypted_array_sum(mult_assist, m)
-                s0_val = self.csp.sum_array(mult_assist)
+                s0_val = self.calc_encrypted_array_sum(mult_assist, self.m)
+                # s0_val = self.csp.sum_array(mult_assist)
                 #now need to add each value to the rates
                 rate_s0_shift = (meth_val_count * elements_in_vector + i)
                 rates = rates + (r_val >> rate_s0_shift)
@@ -238,11 +256,11 @@ class MLE:
         print("calc rates and s0 values ending at: ", time.perf_counter())
 
 
-        ''' for debug 
+        # for debug
         dec_rates = self.csp.decrypt_arr(rates)
         dec_s0 = self.csp.decrypt_arr(s0_vals)
         # return dec_rates, dec_s0
-        '''
+        #
         return rates, s0_vals, gamma_denom
 
     def adapted_time_step(self, rates, s0_vals, meth_vals_list, gamma):
@@ -299,7 +317,7 @@ class MLE:
             new_ages = r_p + 0
 
             for i in range(1, iterations):
-                new_ages += (r_p << i*m)
+                new_ages += (r_p << i*self.m)
 
             mask = np.ones(self.m, dtype=np.int64)
             encoded_mask = self.csp.encode_array(mask)
@@ -318,9 +336,16 @@ class MLE:
         # which is sum(r_i^2)
         ri_squared = rates**2
         ri_squared = ~ri_squared
-        sum_ri_squared = self.csp.sum_array(ri_squared)
 
-        dec_new_ages = self.csp.decrypt_arr(new_ages)
+        sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
+        dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
+        print("dec sum ri squared 1: ", dec_sum_ri_squared)
+
+        sum_ri_squared = self.csp.sum_array(ri_squared)
+        dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
+        print("dec sum ri squared 2: ", dec_sum_ri_squared)
+
+        #dec_new_ages = self.csp.decrypt_arr(new_ages)
 
         return new_ages, sum_ri_squared
 

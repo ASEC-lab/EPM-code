@@ -25,19 +25,19 @@ class CSP:
     def decrypt_arr(self, arr):
         # not for general use, only for debug and test
         # should be removed in final implementation
-        return self.__pyfhelCtxt.decrypt(arr)
+        return self.__pyfhelCtxt.decryptInt(arr)
 
     def decode_arr(self, arr):
         return self.__pyfhelCtxt.decode(arr)
 
     def encode_array(self, arr: np.ndarray):
         assert arr.ndim == 1, "Only 1 dimensional arrays are supported"
-        arr_encoded = self.__pyfhelCtxt.encode(arr)
+        arr_encoded = self.__pyfhelCtxt.encodeInt(arr)
         return arr_encoded
 
     def encrypt_array(self, arr: np.ndarray):
         assert arr.ndim == 1, "Only 1 dimensional arrays are supported"
-        arr_encoded = self.__pyfhelCtxt.encode(arr)
+        arr_encoded = self.__pyfhelCtxt.encodeInt(arr)
         arr_encrypted = self.__pyfhelCtxt.encryptPtxt(arr_encoded)
         return arr_encrypted
 
@@ -47,7 +47,7 @@ class CSP:
         return recrypted_arr
 
     def sum_array(self, enc_arr):
-        dec_arr = self.__pyfhelCtxt.decrypt(enc_arr)
+        dec_arr = self.__pyfhelCtxt.decryptInt(enc_arr)
         arr_sum = np.array([np.sum(dec_arr)])
         enc_arr_sum = self.encrypt_array(arr_sum)
         return enc_arr_sum
@@ -61,9 +61,9 @@ class CSP:
 
     def __gen_enc_keys(self):
         self.__pyfhelCtxt = Pyfhel()
-        self.__pyfhelCtxt.contextGen("BGV", n=self.__n, t=self.__prime, sec=128)
+        #self.__pyfhelCtxt.contextGen("BGV", n=self.__n, t=self.__prime, sec=128)
         #self.__pyfhelCtxt.contextGen("BGV", n=2 ** 13, t=self.__prime, sec=128)
-        #self.__pyfhelCtxt.contextGen("bfv", n=2 ** 13, t_bits=48, sec=128)
+        self.__pyfhelCtxt.contextGen("bfv", n=2 ** 13, t=self.__prime, sec=128)
         #self.__pyfhelCtxt.contextGen("ckks", n=2 ** 14, scale=2**30, qi=[60,30 ,30, 30, 60])
         self.__pyfhelCtxt.keyGen()
         self.__pyfhelCtxt.rotateKeyGen()

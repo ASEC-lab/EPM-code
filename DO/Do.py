@@ -6,6 +6,7 @@ import time
 import logging, sys
 from Math_Utils.MathUtils import read_primes_from_file
 from CSP.Csp import CSP
+from sympy.ntheory.modular import crt
 
 # debug print level. Mainly used for function time measurement printing
 logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
@@ -116,8 +117,27 @@ class DO:
 
         return total_error
 
+    def run_crt(self, primes, res_list_of_lists):
+        values = []
+        transposed = np.array(res_list_of_lists).T.tolist()
+
+        for res_list in transposed:
+            values.append(crt(primes, res_list)[0])
+
+        return values
+
+    def calc_final_ages_crt(self, primes, numerator_list, denom_list):
+        ages = self.run_crt(primes, numerator_list)
+        sum_ri_squared = self.run_crt(primes, denom_list)
+        final_ages = np.array(ages)/sum_ri_squared[0]
+        return final_ages
+
+
     def calc_model(self):
         train_data = self.read_train_data()
+        # comment out for no reduction
+        data_sets = DataSets()
+        train_data = data_sets.reduce_data_size(train_data, 7503, 25)
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
         correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
         # format for encryption ie. round to 2 floating digits and convert to integer
@@ -128,9 +148,17 @@ class DO:
         m = formatted_meth_values.shape[1]
         n = formatted_meth_values.shape[0]
 
-        primes = read_primes_from_file("primes.txt")
-        for i in range(1):
-            csp = CSP(primes[i])
+        primes = read_primes_from_file("/home/meirgold/git/EPM-code/primes.txt")
+        moduli = []
+        final_ages_list = []
+        final_r_square_list = []
+        primes_mul = 1
+        for i in range(2):
+            plaintext_prime = primes[i]
+            primes_mul *= plaintext_prime
+            csp = CSP(plaintext_prime)
+            moduli.append(plaintext_prime)
+
             encoded_n = csp.encode_array(np.array([n]))
             encoded_m = csp.encode_array(np.array([m]))
 
@@ -144,12 +172,14 @@ class DO:
             mle = MLE(csp)
             mle.get_data_from_DO(enc_meth_vals, enc_ages, m, n, encoded_m, encoded_n)
             new_ages, sum_ri_squared = mle.calc_model()
-            decrypt_ages = csp.decrypt_arr(new_ages)
+            decrypt_ages = csp.decrypt_arr(new_ages)[0:m]
             decrypt_sum_ri_squared = csp.decrypt_arr(sum_ri_squared)
 
+            final_ages_list.append(decrypt_ages)
+            final_r_square_list.append([decrypt_sum_ri_squared[0]])
 
-        #final_ages = decrypt_ages/decrypt_sum_ri_squared[0]
-        final_ages = 0
+        print("primes mul: ", primes_mul)
+        final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
         return final_ages
 
 
