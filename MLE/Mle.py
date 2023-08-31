@@ -83,6 +83,16 @@ class MLE:
             ctxt2 = self.check_noise_lvl(ctxt2)
 
         result = ctxt1 * ctxt2
+        if self.csp.get_noise_level(result) == 0:
+            if isinstance(ctxt1, PyCtxt):
+                ctxt1 = self.csp.recrypt_array(ctxt1)
+            if isinstance(ctxt2, PyCtxt):
+                ctxt2 = self.csp.recrypt_array(ctxt2)
+            result = ctxt1 * ctxt2
+            self.recrypt_count += 2
+
+            assert self.csp.get_noise_level(result) > 0, "noise level is zero in multiplication after recrypt. We are doomed"
+
         result = ~result
         return result
 
@@ -225,6 +235,9 @@ class MLE:
         # for debug: dec_all_sigma_t_arr = self.csp.decrypt_arr(all_sigma_t_arr)
         rates_assist_arr = self.safe_mul(rates_assist_arr, sum_ri_square_arr)
 
+        #dec_rates_assist_arr = self.csp.decrypt_arr(rates_assist_arr)
+        #print("meir: ", dec_rates_assist_arr)
+
         s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
         s0_assist_arr -= all_sigma_t_square_arr
 
@@ -234,31 +247,21 @@ class MLE:
         #elements_in_vector = enc_array_size // self.m   # is this a mistake?
         elements_in_vector = self.n
 
-        meth_val_count = 0
         for meth_vals in meth_vals_list:
             for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*self.m)
-                shift_dec = self.csp.decrypt_arr(shifted_vals)
-                mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
-                # for debug: dec_mult_assist = self.csp.decrypt_arr(mult_assist)
-                r_val = self.calc_encrypted_array_sum(mult_assist, self.m)
-                # r_val = self.csp.sum_array(mult_assist)
-                # for debug: dec_r_val = self.csp.decrypt_arr(r_val)
-                #print("r_val: ", self.csp.decrypt_arr(r_val))
-                mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
-                s0_val = self.calc_encrypted_array_sum(mult_assist, self.m)
-                # s0_val = self.csp.sum_array(mult_assist)
-                #now need to add each value to the rates
-                rate_s0_shift = (meth_val_count * elements_in_vector + i)
-                rates = rates + (r_val >> rate_s0_shift)
-                s0_vals += (s0_val >> rate_s0_shift)
-            meth_val_count += 1
+                r_mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
+                rates = rates + r_mult_assist
+                #s0_assist_arr = self.csp.recrypt_array(s0_assist_arr)
+                #shifted_vals = self.csp.recrypt_array(shifted_vals)
+                s0_mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
+                s0_vals = s0_vals + s0_mult_assist
         print("calc rates and s0 values ending at: ", time.perf_counter())
 
 
         # for debug
-        dec_rates = self.csp.decrypt_arr(rates)
-        dec_s0 = self.csp.decrypt_arr(s0_vals)
+        #dec_s0 = self.csp.decrypt_arr(s0_vals)
+        #print("meir:", dec_s0)
         # return dec_rates, dec_s0
         #
         return rates, s0_vals, gamma_denom
