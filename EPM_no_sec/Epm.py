@@ -169,8 +169,6 @@ class EPM:
         for i in range(m):
             mult_val_list.append(self.age_vals[i] * sigma_t - sigma_t_square)
 
-        list_len_div2 = int(len(mult_val_list) / 2)
-
         Y = self.meth_vals.flatten().transpose().astype(float)
 
         # as described in the corollary, we should be able to calculate (XtX)^-1XtY
@@ -184,9 +182,9 @@ class EPM:
         i = 0
         temp_result_upper = Y.copy()
         temp_result_lower = Y.copy()
-        while (i < list_len_div2):
-            temp_result_upper[i::list_len_div2] *= mult_val_list[i]
-            temp_result_lower[i::list_len_div2] *= mult_val_list[i + list_len_div2]
+        while (i < m):
+            temp_result_upper[i::m] *= mult_val_list[i]
+            temp_result_lower[i::m] *= mult_val_list[i + m]
             i += 1
 
         # for the final step, each m values from the upper and lower matrices will be summed
