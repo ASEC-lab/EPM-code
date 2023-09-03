@@ -113,7 +113,7 @@ class MLE:
 
         shift = 0
         while shift < arr_len:
-            shift +=1
+            shift += 1
             add_arr = arr << shift
             sum_arr = sum_arr + add_arr
 
@@ -242,25 +242,24 @@ class MLE:
         s0_assist_arr -= all_sigma_t_square_arr
 
         print("calc rates and s0 values starting at: ", time.perf_counter())
-        # calculate the rate and s0 values
-        enc_array_size = self.csp.get_enc_n() // 2
-        #elements_in_vector = enc_array_size // self.m   # is this a mistake?
-        elements_in_vector = self.n
 
         for meth_vals in meth_vals_list:
-            for i in range(0, elements_in_vector):
+            for i in range(0, self.n):
                 shifted_vals = meth_vals << (i*self.m)
                 r_mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
-                rates = rates + r_mult_assist
+                rate = self.calc_encrypted_array_sum(r_mult_assist, self.m)
+                rates = rates + (rate >> i)
                 #s0_assist_arr = self.csp.recrypt_array(s0_assist_arr)
                 #shifted_vals = self.csp.recrypt_array(shifted_vals)
                 s0_mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
-                s0_vals = s0_vals + s0_mult_assist
+                s0 = self.calc_encrypted_array_sum(s0_mult_assist, self.m)
+                s0_vals = s0_vals + (s0 >> i)
         print("calc rates and s0 values ending at: ", time.perf_counter())
 
 
         # for debug
         #dec_s0 = self.csp.decrypt_arr(s0_vals)
+        #dec_r = self.csp.decrypt_arr(rates)
         #print("meir:", dec_s0)
         # return dec_rates, dec_s0
         #
@@ -365,6 +364,8 @@ class MLE:
         for i in range(iter):
             rates, s0_vals, gamma_denom = self.adapted_site_step(self.ages, self.meth_val_list, sum_ri_squared)
             new_ages, sum_ri_squared = self.adapted_time_step(rates, s0_vals, self.meth_val_list, gamma_denom)
+            #dec_ages = self.csp.decrypt_arr(new_ages)
+            #dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)
             self.ages = new_ages
 
         return self.ages, sum_ri_squared
