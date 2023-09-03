@@ -280,8 +280,8 @@ class MLE:
         iterations = min(self.m, (enc_array_size // self.m))-1
 
         for i in range(1, iterations):
-            calc_assist_s0 += (s0_vals >> (i*self.m - 1))
-            calc_assist_rates += (rates >> (i*self.m - 1))
+            calc_assist_s0 += (s0_vals >> (i*self.m - i))
+            calc_assist_rates += (rates >> (i*self.m - i))
 
         mask = np.zeros(enc_array_size, dtype=np.int64)
         for i in range(iterations):
@@ -312,6 +312,7 @@ class MLE:
             p = meth_vals_gamma - calc_assist_s0
             # now lets multiply by r_i
             r_p = self.safe_mul(p, calc_assist_rates)
+            dec_r_p = self.csp.decrypt_arr(r_p)
             # now the tricky part - calculate the sums for each tj
             # we will use the mask to sum each r_p_j*m
             # this should give us the required sum for each tj
@@ -340,14 +341,8 @@ class MLE:
         ri_squared = ~ri_squared
 
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
-        dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
-        print("dec sum ri squared 1: ", dec_sum_ri_squared)
-
-        sum_ri_squared = self.csp.sum_array(ri_squared)
-        dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
-        print("dec sum ri squared 2: ", dec_sum_ri_squared)
-
-        #dec_new_ages = self.csp.decrypt_arr(new_ages)
+        #dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
+        #print("dec sum ri squared 1: ", dec_sum_ri_squared)
 
         return new_ages, sum_ri_squared
 
