@@ -137,9 +137,10 @@ class DO:
         train_data = self.read_train_data()
         # comment out for no reduction
         data_sets = DataSets()
-        train_data = data_sets.reduce_data_size(train_data, 7503, 25)
+        #train_data = data_sets.reduce_data_size(train_data, 7503, 25)
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
+        #correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
+        correlated_meth_vals = train_methylation_values
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
         logging.debug('Formatting methylation values and ages')
@@ -153,7 +154,7 @@ class DO:
         final_ages_list = []
         final_r_square_list = []
         primes_mul = 1
-        for i in range(2):
+        for i in range(3):
             plaintext_prime = primes[i]
             primes_mul *= plaintext_prime
             csp = CSP(plaintext_prime)
@@ -178,7 +179,8 @@ class DO:
             final_ages_list.append(decrypt_ages)
             final_r_square_list.append([decrypt_sum_ri_squared[0]])
 
-        print("primes mul: ", primes_mul)
+        print("primes mul: ", primes_mul, " no. of digits: ", len(str(primes_mul)))
+
         final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
         return final_ages
 

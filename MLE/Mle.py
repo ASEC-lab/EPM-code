@@ -171,6 +171,15 @@ class MLE:
 
         return num_array
 
+    def safe_power_of(self, enc_arr, power):
+        result = enc_arr ** power
+        if self.csp.get_noise_level(result) == 0:
+            enc_arr = self.csp.recrypt_array(enc_arr)
+            result = enc_arr ** power
+        ~result # re-liniarize after power as it seems this does not happen automatically
+        return result
+
+
     def adapted_site_step(self, ages, meth_vals_list, sum_ri_square):
         """
         The EPM site step algorithm. This step calculates beta = (XtX)^-1 XtY using the conclusions from
@@ -192,23 +201,23 @@ class MLE:
         #all_sigma_t_arr = self.csp.encrypt_array(dummy_zero)
         #all_sigma_t_square_arr = self.csp.encrypt_array(dummy_zero)
 
-        sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, self.n)
+        sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, self.m)
 
-        print("calc sigma_t starting at: ", time.perf_counter())
+        #print("calc sigma_t starting at: ", time.perf_counter())
         sigma_t = self.calc_encrypted_array_sum(ages, self.m)
         # sigma_t = self.csp.sum_array(ages)
         # sigma_t_dec = self.csp.decrypt_arr(sigma_t)
-        print("calc sigma_t ended at: ", time.perf_counter())
-        square_ages = ages ** 2
-        ~square_ages # re-liniarize after power as it seems this does not happen automatically
+        #print("calc sigma_t ended at: ", time.perf_counter())
+        square_ages = self.safe_power_of(ages, 2)
         sigma_t_square = self.calc_encrypted_array_sum(square_ages, self.m)
         #sigma_t_square = self.csp.sum_array(square_ages)
-        print("calc sigma_t_square ended at: ", time.perf_counter())
-        gamma_denom = sigma_t ** 2
-        gamma_denom = ~gamma_denom
+        #print("calc sigma_t_square ended at: ", time.perf_counter())
+        gamma_denom = self.safe_power_of(sigma_t, 2)
         gamma_denom -= self.safe_mul(self.m, sigma_t_square)
 
-        rates_assist_arr = -1 * self.m * ages
+        minus_m_arr = self.csp.encrypt_array(np.array([-1*self.m], dtype=np.int64))
+        minus_m_arr_enc = self.enc_array_same_num(minus_m_arr, self.m)
+        rates_assist_arr = self.safe_mul(minus_m_arr_enc, ages)
         # dec_rates_assist_arr = self.csp.decrypt_arr(rates_assist_arr)
         # dec_ages = self.csp.decrypt_arr(ages)
         # dec_ages_m = self.csp.decrypt_arr(self.m * ages)
@@ -216,7 +225,7 @@ class MLE:
         s0_assist_arr = ages
 
         tic = time.perf_counter()
-        print("calc all_sigma arrays starting at: ", tic)
+        #print("calc all_sigma arrays starting at: ", tic)
         all_sigma_t_arr = self.enc_array_same_num(sigma_t, self.m)
         all_sigma_t_square_arr = self.enc_array_same_num(sigma_t_square, self.m)
 
@@ -226,7 +235,7 @@ class MLE:
         #for i in range(m):
         #    all_sigma_t_arr += (sigma_t >> i)
         #    all_sigma_t_square_arr += (sigma_t_square >> i)
-        print("calc all_sigma arrays took: ", time.perf_counter() - tic)
+        #print("calc all_sigma arrays took: ", time.perf_counter() - tic)
 
         # in order to avoid the need to build the expanded diagonal matrices
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
@@ -241,7 +250,7 @@ class MLE:
         s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
         s0_assist_arr -= all_sigma_t_square_arr
 
-        print("calc rates and s0 values starting at: ", time.perf_counter())
+        #print("calc rates and s0 values starting at: ", time.perf_counter())
 
         for meth_vals in meth_vals_list:
             for i in range(0, self.n):
@@ -254,7 +263,7 @@ class MLE:
                 s0_mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
                 s0 = self.calc_encrypted_array_sum(s0_mult_assist, self.m)
                 s0_vals = s0_vals + (s0 >> i)
-        print("calc rates and s0 values ending at: ", time.perf_counter())
+        #print("calc rates and s0 values ending at: ", time.perf_counter())
 
 
         # for debug
@@ -302,7 +311,7 @@ class MLE:
         #dec_gamma_array = self.csp.decrypt_arr(gamma_array)
 
         tic = time.perf_counter()
-        print("calc new ages starting at: ", tic)
+        #print("calc new ages starting at: ", tic)
         for meth_vals in meth_vals_list:
             meth_vals_gamma = self.safe_mul(meth_vals, gamma_array)
 
@@ -333,12 +342,11 @@ class MLE:
                 # new_ages += ((self.csp.sum_array(self.safe_mul(r_p, (encrypted_mask >> i)))) >> i)
                 new_ages += ((self.calc_encrypted_array_sum(self.safe_mul(r_p, (encrypted_mask >> i)), enc_array_size)) >> i)
             '''
-        print("calc new ages took: ", time.perf_counter()-tic)
+        #print("calc new ages took: ", time.perf_counter()-tic)
 
         # now we just need to calculate the denominator for the site step
         # which is sum(r_i^2)
-        ri_squared = rates**2
-        ri_squared = ~ri_squared
+        ri_squared = self.safe_power_of(rates, 2)
 
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
         #dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
@@ -354,7 +362,7 @@ class MLE:
         @return: ages, rates and s0 values calculated by the 2 steps
         """
 
-        iter = 1
+        iter = 2
         sum_ri_squared = 1
         for i in range(iter):
             rates, s0_vals, gamma_denom = self.adapted_site_step(self.ages, self.meth_val_list, sum_ri_squared)

@@ -266,7 +266,7 @@ class EPM:
 
     def calc_model_new_method(self):
         i = 0
-        iter_limit = 1
+        iter_limit = 2
         sigma_ri_squared = 1
 
         while i < iter_limit:
