@@ -61,8 +61,8 @@ class DataSets:
         Load the training data
         @return: training data set
         """
-        #train_data = self.load_data_set(f'{self.example_dir}GSE74193_train.tsv.gz')
-        train_data = self.load_data_set(f'{self.example_dir}custom_train_data.tsv.gz')
+        train_data = self.load_data_set(f'{self.example_dir}GSE74193_train.tsv.gz')
+        #־־־train_data = self.load_data_set(f'{self.example_dir}custom_train_data.tsv.gz')
 
         return train_data
 

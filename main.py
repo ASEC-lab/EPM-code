@@ -29,6 +29,7 @@ def epm_orig():
     # these figures are useful for debug, our goal is to run the 700 sites
     correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
+    #correlated_meth_val = train_methylation_values
     # run the algorithm
     epm = EPM(correlated_meth_val, train_ages)
     model = epm.calc_model(max_iterations, rss)
@@ -55,27 +56,28 @@ def epm_orig_new_method():
     data_sets = DataSets()
     # read training data
     full_train_data = data_sets.get_example_train_data()
-    full_train_data = data_sets.reduce_data_size(full_train_data, 7503, 25)
+    #full_train_data = data_sets.reduce_data_size(full_train_data, 7503, 25)
     train_samples, train_cpg_sites, train_ages, train_methylation_values = full_train_data
     # run pearson correlation in order to reduce the amount of processed data
     abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
     # correlation of .80 will return ~700 site indices
     # correlation of .91 will return ~24 site indices
     # these figures are useful for debug, our goal is to run the 700 sites
-    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
+    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
+    #correlated_meth_val = train_methylation_values
 
     # uncommet these lines to use the rounded integer values for this algorithm
     # unfortunately, the numbers are so large that we receive an overflow
     # but this is a good method to print out the expected number sizes we may reach
 
     formatted_ages = format_array_for_enc(train_ages)
-    formatter_correlated_meth_val = format_array_for_enc(correlated_meth_val)
+    formatted_correlated_meth_val = format_array_for_enc(correlated_meth_val)
 
     #formatted_ages = train_ages
-    #formatter_correlated_meth_val = correlated_meth_val
+    #formatted_correlated_meth_val = correlated_meth_val
     # run the algorithm
-    epm = EPM(formatter_correlated_meth_val, formatted_ages)
+    epm = EPM(formatted_correlated_meth_val, formatted_ages)
     ages = epm.calc_model_new_method()
     return ages
 
@@ -126,12 +128,17 @@ def bfv_test_prime(prime):
     arr2 = np.array([-8, 0, 0], dtype=np.int64)
     arr3 = np.array([20000, 0, 0], dtype=np.int64)
 
+    arr4 = np.array([-40, 60000])
+
     ptxt1 = HE.encodeInt(arr1)  # Creates a PyPtxt plaintext with the encoded arr1
     ptxt2 = HE.encodeInt(arr2)  # plaintexts created from arrays shorter than 'n' are filled with zeros.
     ptxt3 = HE.encodeInt(arr3)
+    ptxt4 = HE.encodeInt(arr4)
+
     ctxt1 = HE.encryptPtxt(ptxt1)  # Encrypts the plaintext ptxt1 and returns a PyCtxt
     ctxt2 = HE.encryptPtxt(ptxt2)  # Alternatively you can use HE.encryptInt(arr2)
     ctxt3 = HE.encryptPtxt(ptxt3)  # Alternatively you can use HE.encryptInt(arr2)
+    ctxt4 = HE.encryptPtxt(ptxt4)
 
     ccMul = ctxt1 * ctxt2  # Calls HE.multiply(ctxt1, ctxt2, in_new_ctxt=True)
     ccMul = ~ccMul
@@ -139,6 +146,8 @@ def bfv_test_prime(prime):
     ccMul = ccMul * ctxt2
     ccMul = ccMul * ctxt2
     rccMul = HE.decryptInt(ccMul)
+
+    print("ctxt4: ", HE.decryptInt(ctxt4))
 
     print("real result: ", (8000 * (-8) + 20000) * (-8) * (-8))
     return rccMul[0]
@@ -295,13 +304,15 @@ def main():
     #bgv_test2()
 
     # this runs the encrypted version
-    ages = test_do()
+    #ages = test_do()
     # epm cleartext testing using the new algorithm without division
-    #ages = epm_orig_new_method()
+    ages = epm_orig_new_method()
+    # original algorithm
+    #ages = epm_orig()
     print(ages)
     #mult_primes()
     # epm cleartext testing using the original cleartext algorithm with division
-    # ages = epm_orig()
+
 
 
 if __name__ == '__main__':

@@ -130,6 +130,8 @@ class DO:
         ages = self.run_crt(primes, numerator_list)
         sum_ri_squared = self.run_crt(primes, denom_list)
         final_ages = np.array(ages)/sum_ri_squared[0]
+        print("age numerator: ",np.array(ages))
+        print("sum_ri_squared: ", sum_ri_squared[0])
         return final_ages
 
 
@@ -154,7 +156,7 @@ class DO:
         final_ages_list = []
         final_r_square_list = []
         primes_mul = 1
-        for i in range(3):
+        for i in range(7):
             plaintext_prime = primes[i]
             primes_mul *= plaintext_prime
             csp = CSP(plaintext_prime)

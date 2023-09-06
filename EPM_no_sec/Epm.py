@@ -154,6 +154,7 @@ class EPM:
         return rates, s0
 
     def both_steps_no_division(self, sigma_ri_square):
+        prime = 1462436364289
         mult_val_list = []
         m = self.age_vals.shape[0]  # the number of individuals
         n = self.meth_vals.shape[0]  # the number of sites
@@ -195,6 +196,21 @@ class EPM:
 
         rates = result[0:n]
         s0_vals = result[n:]
+
+        rates_mod_prime = []
+        s0_mod_prime = []
+        for rate in rates:
+            if (rate % prime) > (prime/2):
+                rates_mod_prime.append((prime-(rate%prime))*(-1))
+            else:
+                rates_mod_prime.append(rate % prime)
+
+        for s0 in s0_vals:
+            if (s0 % prime) > (prime / 2):
+                s0_mod_prime.append((prime - (s0 % prime)) * (-1))
+            else:
+                s0_mod_prime.append(s0 % prime)
+
 
         # calc the matrix  S = (S_ij - s0_i)
         meth_vals_gamma = self.meth_vals * gamma
@@ -275,5 +291,7 @@ class EPM:
             i += 1
 
         ages = self.age_vals / sigma_ri_squared
+        print("age numerator: self.age_vals: ", self.age_vals)
+        print("sigma_ri_squared: ", sigma_ri_squared)
         return ages
 
