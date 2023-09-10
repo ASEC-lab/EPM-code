@@ -1,6 +1,7 @@
 import numpy as np
 import time
 from Pyfhel import Pyfhel, PyCtxt
+from inspect import getframeinfo, stack
 
 '''
 Machine Learning Engine (MLE) implementation
@@ -30,14 +31,12 @@ class MLE:
         rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()//2))
         self.rand_mask = csp.encrypt_array(rand_mask)
 
-    def get_data_from_DO(self, meth_val_list, ages, m, n, encoded_m, encoded_n):
+    def get_data_from_DO(self, meth_val_list, ages, m, n):
 
         self.meth_val_list = meth_val_list
         self.ages = ages
         self.m = m
         self.n = n
-        self.encoded_m = encoded_m
-        self.encoded_n = encoded_n
 
         '''
         DO_to_MLE_file = open("network/do_to_mle_{}.bin".format(self.FILE_COUNTER), "wb")
@@ -60,9 +59,41 @@ class MLE:
             ctxt = self.csp.recrypt_array(ctxt)
             self.recrypt_count += 1
             print("Recrypting. New noise level: ", self.csp.get_noise_level(ctxt))
+            caller = getframeinfo(stack()[3][0])
+            print("%s:%d - %s" % (caller.filename, caller.lineno, " called this"))
 
         #ctxt -= self.rand_mask
         return ctxt
+
+    def __safe_math_run_op__(self, ctxt1, ctxt2, operation):
+
+        match operation:
+            case '+':
+                result = ctxt1 + ctxt2
+            case '-':
+                result = ctxt1 - ctxt2
+            case '*':
+                result = ctxt1 * ctxt2
+            case _:
+                assert False, "Operation " + operation + " not supported"
+
+        return result
+
+    def safe_math(self, ctxt1, ctxt2, operation):
+
+        result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
+        if isinstance(result, PyCtxt):
+            lvl = self.csp.get_noise_level(result)
+            if lvl == 0:
+                if isinstance(ctxt1, PyCtxt):
+                    ctxt1 = self.check_noise_lvl(ctxt1)
+                if isinstance(ctxt2, PyCtxt):
+                    ctxt2 = self.check_noise_lvl(ctxt2)
+
+                result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
+                lvl = self.csp.get_noise_level(result)
+                assert lvl > 0, "Noise level is 0 even after recrypt"
+
 
     def safe_mul(self, ctxt1, ctxt2):
         """
@@ -97,55 +128,57 @@ class MLE:
         return result
 
     def calc_encrypted_array_sum(self, arr, arr_len: int):
-        """
-        sum an encrypted array
-        @param arr: the array to sum
-        @param arr_len:  the length of the array
-        @return: an encrypted array with the sum in the first cell
-        """
-        sum_arr = arr
-        #for debug
+
+        # Fast algorithm for summing encrypted arrays
+        # The general idea here is to split the array into 2 using shifts
+        # and then sum the 2 arrays (original and shifted).
+        # The only caveat here is cases where there is a remainder of the array_size/2.
+        # In this case we need to add an extra number which is always located at shift_val*2 + 1
+        # so if we shift the array again by the same value and add the first number, we will get
+        # what we are looking for
+        # A the end of the loop, add these numbers to the total sum
+
+        # for debug
         #summed_arr = self.csp.sum_array(arr)
         #dec_arr = self.csp.decrypt_arr(summed_arr)
         #print("dec_arr old algorithm: ", dec_arr[0])
-        # no more debug
 
+        summed_arr = arr + 0
+        temp_add_arr = 0
+        remainder = False
 
-        shift = 0
-        while shift < arr_len:
-            shift += 1
-            add_arr = arr << shift
-            sum_arr = sum_arr + add_arr
+        while arr_len > 1:
+            if (arr_len % 2) > 0:
+                remainder = True
+            arr_len = arr_len // 2
+            shift_val = arr_len
+            #print("arr_len: ", arr_len)
+            shifted = summed_arr << shift_val
+            #dec_arr = self.csp.decrypt_arr(summed_arr)
+            #print("summed: ", dec_arr[0:20])
+            #dec_arr = self.csp.decrypt_arr(shifted)
+            #print("shiftd: ", dec_arr[0:20])
+            summed_arr = summed_arr + shifted
+            #dec_arr = self.csp.decrypt_arr(summed_arr)
+            #print("---------------------------------------")
+            #print("summed: ", dec_arr[0:20])
+            #print("---------------------------------------")
+            if remainder:
+                temp_add_arr = temp_add_arr + (shifted << arr_len)
+                remainder = False
+
+        summed_arr = summed_arr + temp_add_arr
+        #dec_arr = self.csp.decrypt_arr(summed_arr)
+        #print("last addition: ", dec_arr[0:20])
 
         mask_arr = np.array([1])
         encoded_mask_arr = self.csp.encode_array(mask_arr)
-        new_sum = self.safe_mul(sum_arr, encoded_mask_arr)
+        new_sum = self.safe_mul(summed_arr, encoded_mask_arr)
 
-        # for debug
         #dec_arr = self.csp.decrypt_arr(new_sum)
-        #print("dec_arr this algorithm: ", dec_arr[0])
-        #no more debug
+        #print("dec_arr new algorithm: ", dec_arr[0])
 
         return new_sum
-
-    def enc_array_same_num1(self, enc_num, size):
-        '''
-        an inefficient implementation. use the one below for faster performance
-        This one can probably be deleted
-        '''
-        expected_copies = 1
-        num_array = enc_num + 0
-        arr_to_duplicate = enc_num + 0
-        i = 1
-        while True:
-            num_array += arr_to_duplicate >> i
-            arr_to_duplicate = num_array
-            expected_copies += i
-            i *= 2
-            if expected_copies > size:
-                break
-
-
 
     def enc_array_same_num(self, enc_num, size):
         """
@@ -182,6 +215,7 @@ class MLE:
     def noise_level_assert(self, arr):
         lvl = self.csp.get_noise_level(arr)
         assert lvl > 0, "noise level is 0"
+
     def adapted_site_step(self, ages, meth_vals_list, sum_ri_square):
         """
         The EPM site step algorithm. This step calculates beta = (XtX)^-1 XtY using the conclusions from
@@ -208,14 +242,10 @@ class MLE:
         #print("calc sigma_t starting at: ", time.perf_counter())
         sigma_t = self.calc_encrypted_array_sum(ages, self.m)
         self.noise_level_assert(sigma_t)
-        # sigma_t = self.csp.sum_array(ages)
-        # sigma_t_dec = self.csp.decrypt_arr(sigma_t)
         #print("calc sigma_t ended at: ", time.perf_counter())
         square_ages = self.safe_power_of(ages, 2)
         sigma_t_square = self.calc_encrypted_array_sum(square_ages, self.m)
         self.noise_level_assert(sigma_t_square)
-        #sigma_t_square = self.csp.sum_array(square_ages)
-        #print("calc sigma_t_square ended at: ", time.perf_counter())
         gamma_denom = self.safe_power_of(sigma_t, 2)
         gamma_denom -= self.safe_mul(self.m, sigma_t_square)
         self.noise_level_assert(gamma_denom)
@@ -240,11 +270,6 @@ class MLE:
         # for debug: dec_sigma_t = self.csp.decrypt_arr(all_sigma_t_arr)
         # for debug: dec_sigma_t_s = self.csp.decrypt_arr(all_sigma_t_square_arr)
 
-        #for i in range(m):
-        #    all_sigma_t_arr += (sigma_t >> i)
-        #    all_sigma_t_square_arr += (sigma_t_square >> i)
-        #print("calc all_sigma arrays took: ", time.perf_counter() - tic)
-
         # in order to avoid the need to build the expanded diagonal matrices
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
         rates_assist_arr += all_sigma_t_arr
@@ -260,9 +285,12 @@ class MLE:
         s0_assist_arr -= all_sigma_t_square_arr
         self.noise_level_assert(s0_assist_arr)
         #print("calc rates and s0 values starting at: ", time.perf_counter())
+        enc_array_size = self.csp.get_enc_n() // 2
+        elements_in_vector = enc_array_size // self.m
 
         for meth_vals in meth_vals_list:
-            for i in range(0, self.n):
+            #for i in range(0, self.n):
+            for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*self.m)
                 r_mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
                 self.noise_level_assert(r_mult_assist)
@@ -332,7 +360,6 @@ class MLE:
         # create an array full of gamma values in order to easily multiply each Sij by gamma
         gamma_array = self.enc_array_same_num(gamma, enc_array_size)
         self.noise_level_assert(gamma_array)
-        #dec_gamma_array = self.csp.decrypt_arr(gamma_array)
 
         tic = time.perf_counter()
         #print("calc new ages starting at: ", tic)
@@ -391,7 +418,6 @@ class MLE:
         runs the site step and time step once
         @return: ages, rates and s0 values calculated by the 2 steps
         """
-
         iter = 2
         sum_ri_squared = 1
         for i in range(iter):

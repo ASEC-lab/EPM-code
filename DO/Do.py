@@ -69,7 +69,7 @@ class DO:
         meth_vals_new_shape.resize((meth_vals_new_rows, meth_vals_new_cols), refcheck=False)
 
         # create the new encrypted vector dictionary
-        print("Encrypting methylation values")
+        print("Encrypting methylation values. shape is: ", meth_vals_new_shape.shape)
         encrypted_vector_list = np.apply_along_axis(csp.encrypt_array, axis=1, arr=meth_vals_new_shape)
 
         # encrypt the ages
@@ -141,8 +141,8 @@ class DO:
         data_sets = DataSets()
         #train_data = data_sets.reduce_data_size(train_data, 7503, 25)
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        #correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
-        correlated_meth_vals = train_methylation_values
+        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
+        #correlated_meth_vals = train_methylation_values
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
         logging.debug('Formatting methylation values and ages')
@@ -151,19 +151,22 @@ class DO:
         m = formatted_meth_values.shape[1]
         n = formatted_meth_values.shape[0]
 
-        primes = read_primes_from_file("/home/meirgold/git/EPM-code/primes.txt")
+        #primes = read_primes_from_file("/home/meirgold/git/EPM-code/primes.txt")
+        primes = read_primes_from_file("/home/meirgold/git/EPM-code/very_large_primes.txt")
         moduli = []
         final_ages_list = []
         final_r_square_list = []
         primes_mul = 1
-        for i in range(7):
+        #for i in range(7):
+        for i in range(3):
             plaintext_prime = primes[i]
+            print("Running secure algorithm for prime: ", plaintext_prime)
             primes_mul *= plaintext_prime
             csp = CSP(plaintext_prime)
             moduli.append(plaintext_prime)
 
-            encoded_n = csp.encode_array(np.array([n]))
-            encoded_m = csp.encode_array(np.array([m]))
+            #encoded_n = csp.encode_array(np.array([n]))
+            #encoded_m = csp.encode_array(np.array([m]))
 
             logging.debug('Encrypting ages and methylation  values')
             tic = time.perf_counter()
@@ -173,7 +176,7 @@ class DO:
             logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
 
             mle = MLE(csp)
-            mle.get_data_from_DO(enc_meth_vals, enc_ages, m, n, encoded_m, encoded_n)
+            mle.get_data_from_DO(enc_meth_vals, enc_ages, m, n)
             new_ages, sum_ri_squared = mle.calc_model()
             decrypt_ages = csp.decrypt_arr(new_ages)[0:m]
             decrypt_sum_ri_squared = csp.decrypt_arr(sum_ri_squared)

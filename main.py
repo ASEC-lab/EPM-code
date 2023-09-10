@@ -1,5 +1,6 @@
 import numpy as np
 from CSP.Csp import CSP
+from MLE.Mle import MLE
 import datetime
 from EPM_no_sec.Epm import EPM
 from DataHandler.DataSets import DataSets
@@ -9,7 +10,7 @@ from DO.Do import DO
 from Pyfhel import PyCtxt, Pyfhel, PyPtxt
 import sys
 from sympy.ntheory.modular import crt
-import math
+import time
 
 def epm_orig():
     """
@@ -63,7 +64,7 @@ def epm_orig_new_method():
     # correlation of .80 will return ~700 site indices
     # correlation of .91 will return ~24 site indices
     # these figures are useful for debug, our goal is to run the 700 sites
-    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
+    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
     #correlated_meth_val = train_methylation_values
 
@@ -111,9 +112,9 @@ def bfv_test_prime(prime):
         #  of elements to be encoded in a single ciphertext in a
         #  2 by n/2 rectangular matrix (mind this shape for rotations!)
         #  Typ. 2^D for D in [10, 16]
-        't': prime, #65537, # 1462436364289,  # Plaintext modulus. Encrypted operations happen modulo t
+        #'t': prime, #65537, # 1462436364289,  # Plaintext modulus. Encrypted operations happen modulo t
         #  Must be prime such that t-1 be divisible by 2^N.
-        #'t_bits': 20,  # Number of bits in t. Used to generate a suitable value
+        't_bits': 60,  # Number of bits in t. Used to generate a suitable value
         #  for t. Overrides t if specified.
         'sec': 128,  # Security parameter. The equivalent length of AES key in bits.
         #  Sets the ciphertext modulus q, can be one of {128, 192, 256}
@@ -154,7 +155,7 @@ def bfv_test_prime(prime):
 
 
 def bfv_test():
-    primes = [65537, 114689]
+    primes = [65537, 114689, 1121348352643391489]
     #primes = [114689]
     results = []
     for prime in primes:
@@ -293,6 +294,24 @@ def bgv_test2():
         result = modulu_results
     print(result[0])
 
+def test_arr_sum():
+    plaintext_prime = 1462436364289
+    csp = CSP(plaintext_prime)
+    mle = MLE(csp)
+
+    arr = np.arange(1, 8192)
+    enc_arr = csp.encrypt_array(arr)
+
+    tic = time.perf_counter()
+    new_sum = csp.sum_arr(enc_arr, 1024)
+    print("their method took: ", time.perf_counter() - tic, "seconds")
+
+    dec_arr = csp.decrypt_arr(new_sum)
+
+    tic = time.perf_counter()
+    mle.calc_encrypted_array_sum(enc_arr, len(arr))
+    print("new sum method took: ", time.perf_counter()-tic, "seconds")
+
 
 def main():
     #test_read_primes()
@@ -300,16 +319,18 @@ def main():
     #bgv_test()
     #bgv_mult()
     #bfv_test()
+    #test_arr_sum()
 
     #bgv_test2()
 
     # this runs the encrypted version
-    #ages = test_do()
+    ages = test_do()
     # epm cleartext testing using the new algorithm without division
-    ages = epm_orig_new_method()
+    #ages = epm_orig_new_method()
     # original algorithm
     #ages = epm_orig()
     print(ages)
+    #print(len(ages))
     #mult_primes()
     # epm cleartext testing using the original cleartext algorithm with division
 
