@@ -141,8 +141,8 @@ class DO:
         data_sets = DataSets()
         #train_data = data_sets.reduce_data_size(train_data, 7503, 25)
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
-        #correlated_meth_vals = train_methylation_values
+        #correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
+        correlated_meth_vals = train_methylation_values
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
         logging.debug('Formatting methylation values and ages')
@@ -151,14 +151,14 @@ class DO:
         m = formatted_meth_values.shape[1]
         n = formatted_meth_values.shape[0]
 
-        #primes = read_primes_from_file("/home/meirgold/git/EPM-code/primes.txt")
-        primes = read_primes_from_file("/home/meirgold/git/EPM-code/very_large_primes.txt")
+        primes = read_primes_from_file("/home/meirgold/git/EPM-code/primes.txt")
+        #primes = read_primes_from_file("/home/meirgold/git/EPM-code/very_large_primes.txt")
         moduli = []
         final_ages_list = []
         final_r_square_list = []
         primes_mul = 1
-        #for i in range(7):
-        for i in range(3):
+        for i in range(7):
+        #for i in range(3):
             plaintext_prime = primes[i]
             print("Running secure algorithm for prime: ", plaintext_prime)
             primes_mul *= plaintext_prime

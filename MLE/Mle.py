@@ -94,6 +94,8 @@ class MLE:
                 lvl = self.csp.get_noise_level(result)
                 assert lvl > 0, "Noise level is 0 even after recrypt"
 
+        return result
+
 
     def safe_mul(self, ctxt1, ctxt2):
         """
@@ -164,10 +166,10 @@ class MLE:
             #print("summed: ", dec_arr[0:20])
             #print("---------------------------------------")
             if remainder:
-                temp_add_arr = temp_add_arr + (shifted << arr_len)
+                temp_add_arr = self.safe_math(temp_add_arr, (shifted << arr_len), '+')
                 remainder = False
 
-        summed_arr = summed_arr + temp_add_arr
+        summed_arr = self.safe_math(summed_arr, temp_add_arr, '+')
         #dec_arr = self.csp.decrypt_arr(summed_arr)
         #print("last addition: ", dec_arr[0:20])
 
@@ -191,7 +193,7 @@ class MLE:
         num_array = enc_num + 0
         next_array_size = 2
         while (i < size) and (next_array_size <= size):
-            num_array += num_array >> i
+            num_array = self.safe_math(num_array, num_array >> i, '+')
             i *= 2
             next_array_size *= 2
         # if the size is a power of 2, we're done. If not, need to add to the missing cells
@@ -199,7 +201,7 @@ class MLE:
             return num_array
         else:
             while i < size:
-                num_array += enc_num >> i
+                num_array = self.safe_math(num_array, enc_num >> i, '+')
                 i += 1
 
         return num_array
@@ -272,7 +274,7 @@ class MLE:
 
         # in order to avoid the need to build the expanded diagonal matrices
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
-        rates_assist_arr += all_sigma_t_arr
+        rates_assist_arr = self.safe_math(rates_assist_arr, all_sigma_t_arr, '+')
         self.noise_level_assert(rates_assist_arr)
         # for debug: dec_rates_assist = self.csp.decrypt_arr(rates_assist_arr)
         # for debug: dec_all_sigma_t_arr = self.csp.decrypt_arr(all_sigma_t_arr)
@@ -282,11 +284,12 @@ class MLE:
         #print("meir: ", dec_rates_assist_arr)
 
         s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
-        s0_assist_arr -= all_sigma_t_square_arr
+        s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_square_arr, '-')
         self.noise_level_assert(s0_assist_arr)
         #print("calc rates and s0 values starting at: ", time.perf_counter())
         enc_array_size = self.csp.get_enc_n() // 2
         elements_in_vector = enc_array_size // self.m
+        elements_in_vector = min(self.n, elements_in_vector)
 
         for meth_vals in meth_vals_list:
             #for i in range(0, self.n):
@@ -296,7 +299,7 @@ class MLE:
                 self.noise_level_assert(r_mult_assist)
                 rate = self.calc_encrypted_array_sum(r_mult_assist, self.m)
                 self.noise_level_assert(rate)
-                rates = rates + (rate >> i)
+                rates = self.safe_math(rates, (rate >> i), '+')
                 self.noise_level_assert(rates)
                 #s0_assist_arr = self.csp.recrypt_array(s0_assist_arr)
                 #shifted_vals = self.csp.recrypt_array(shifted_vals)
@@ -304,7 +307,7 @@ class MLE:
                 self.noise_level_assert(s0_mult_assist)
                 s0 = self.calc_encrypted_array_sum(s0_mult_assist, self.m)
                 self.noise_level_assert(s0)
-                s0_vals = s0_vals + (s0 >> i)
+                s0_vals = self.safe_math(s0_vals, (s0 >> i), '+')
                 self.noise_level_assert(s0_vals)
         #print("calc rates and s0 values ending at: ", time.perf_counter())
 
@@ -333,8 +336,8 @@ class MLE:
         iterations = min(self.m, (enc_array_size // self.m))-1
 
         for i in range(1, iterations):
-            calc_assist_s0 += (s0_vals >> (i*self.m - i))
-            calc_assist_rates += (rates >> (i*self.m - i))
+            calc_assist_s0 = self.safe_math(calc_assist_s0, s0_vals >> (i*self.m - i), '+')
+            calc_assist_rates = self.safe_math(calc_assist_rates, rates >> (i*self.m - i), '+')
 
         self.noise_level_assert(calc_assist_s0)
         self.noise_level_assert(calc_assist_rates)
@@ -352,8 +355,8 @@ class MLE:
         separated_rates = calc_assist_rates + 0
 
         for i in range(1, self.m):
-            calc_assist_s0 += (separated_s0 >> i)
-            calc_assist_rates += (separated_rates >> i)
+            calc_assist_s0 = self.safe_math(calc_assist_s0, (separated_s0 >> i), '+')
+            calc_assist_rates = self.safe_math(calc_assist_rates, (separated_rates >> i), '+')
 
         self.noise_level_assert(calc_assist_s0)
         self.noise_level_assert(calc_assist_rates)
@@ -370,7 +373,7 @@ class MLE:
             # now we need to calc the numerator of the time step.
             # which is: sum(r_i(meth_vals_gamma - s^0_i))
             # first lets calculate (meth_vals_gamma - s^0_i)
-            p = meth_vals_gamma - calc_assist_s0
+            p = self.safe_math(meth_vals_gamma, calc_assist_s0, '-')
             self.noise_level_assert(p)
             # now lets multiply by r_i
             r_p = self.safe_mul(p, calc_assist_rates)
@@ -383,7 +386,7 @@ class MLE:
             new_ages = r_p + 0
 
             for i in range(1, iterations):
-                new_ages += (r_p << i*self.m)
+                new_ages = self.safe_math(new_ages, (r_p << i*self.m), '+')
 
             self.noise_level_assert(new_ages)
             mask = np.ones(self.m, dtype=np.int64)
