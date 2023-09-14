@@ -330,6 +330,9 @@ def main():
     # original algorithm
     #ages = epm_orig()
     print(ages)
+    #with open('ages_472.txt', 'w') as f:
+    #    for age in ages:
+    #        f.write(f"{age}\n")
     #print(len(ages))
     #mult_primes()
     # epm cleartext testing using the original cleartext algorithm with division

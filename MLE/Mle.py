@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import time
 from Pyfhel import Pyfhel, PyCtxt
@@ -55,7 +57,7 @@ class MLE:
         lvl = self.csp.get_noise_level(ctxt)
         #assert lvl > 0, "reached 0 noised budget"
 
-        if lvl == 0:
+        if lvl < 20:
             ctxt = self.csp.recrypt_array(ctxt)
             self.recrypt_count += 1
             print("Recrypting. New noise level: ", self.csp.get_noise_level(ctxt))
@@ -74,6 +76,7 @@ class MLE:
                 result = ctxt1 - ctxt2
             case '*':
                 result = ctxt1 * ctxt2
+                result = ~result
             case _:
                 assert False, "Operation " + operation + " not supported"
 
@@ -86,12 +89,17 @@ class MLE:
             lvl = self.csp.get_noise_level(result)
             if lvl == 0:
                 if isinstance(ctxt1, PyCtxt):
-                    ctxt1 = self.check_noise_lvl(ctxt1)
+                    #print("Noise level of ctxt1 before recrypt: ", self.csp.get_noise_level(ctxt1))
+                    ctxt1 = self.csp.recrypt_array(ctxt1)
+                    #print("Noise level of ctxt1 after recrypt: ", self.csp.get_noise_level(ctxt1))
                 if isinstance(ctxt2, PyCtxt):
-                    ctxt2 = self.check_noise_lvl(ctxt2)
+                    #print("Noise level of ctxt2 before recrypt: ", self.csp.get_noise_level(ctxt2))
+                    ctxt2 = self.csp.recrypt_array(ctxt2)
+                    #print("Noise level of ctxt2 after recrypt: ", self.csp.get_noise_level(ctxt2))
 
                 result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
                 lvl = self.csp.get_noise_level(result)
+
                 assert lvl > 0, "Noise level is 0 even after recrypt"
 
         return result
@@ -160,7 +168,7 @@ class MLE:
             #print("summed: ", dec_arr[0:20])
             #dec_arr = self.csp.decrypt_arr(shifted)
             #print("shiftd: ", dec_arr[0:20])
-            summed_arr = summed_arr + shifted
+            summed_arr = self.safe_math(summed_arr, shifted, '+')
             #dec_arr = self.csp.decrypt_arr(summed_arr)
             #print("---------------------------------------")
             #print("summed: ", dec_arr[0:20])
@@ -232,31 +240,31 @@ class MLE:
         @return: the model parameters: s0 and rates
         """
 
+        print("Executing site step")
         # create empty encrypted arrays to store the s0 and rate values
         dummy_zero = np.zeros(1, dtype=np.int64)
         rates = self.csp.encrypt_array(dummy_zero)
         s0_vals = self.csp.encrypt_array(dummy_zero)
-        #all_sigma_t_arr = self.csp.encrypt_array(dummy_zero)
-        #all_sigma_t_square_arr = self.csp.encrypt_array(dummy_zero)
+
 
         sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, self.m)
 
         #print("calc sigma_t starting at: ", time.perf_counter())
         sigma_t = self.calc_encrypted_array_sum(ages, self.m)
-        self.noise_level_assert(sigma_t)
+        
         #print("calc sigma_t ended at: ", time.perf_counter())
         square_ages = self.safe_power_of(ages, 2)
         sigma_t_square = self.calc_encrypted_array_sum(square_ages, self.m)
-        self.noise_level_assert(sigma_t_square)
+        
         gamma_denom = self.safe_power_of(sigma_t, 2)
         gamma_denom -= self.safe_mul(self.m, sigma_t_square)
-        self.noise_level_assert(gamma_denom)
+        
 
         minus_m_arr = self.csp.encrypt_array(np.array([-1*self.m], dtype=np.int64))
         minus_m_arr_enc = self.enc_array_same_num(minus_m_arr, self.m)
-        self.noise_level_assert(minus_m_arr_enc)
+        
         rates_assist_arr = self.safe_mul(minus_m_arr_enc, ages)
-        self.noise_level_assert(rates_assist_arr)
+        
         # dec_rates_assist_arr = self.csp.decrypt_arr(rates_assist_arr)
         # dec_ages = self.csp.decrypt_arr(ages)
         # dec_ages_m = self.csp.decrypt_arr(self.m * ages)
@@ -266,58 +274,44 @@ class MLE:
         tic = time.perf_counter()
         #print("calc all_sigma arrays starting at: ", tic)
         all_sigma_t_arr = self.enc_array_same_num(sigma_t, self.m)
-        self.noise_level_assert(all_sigma_t_arr)
+        
         all_sigma_t_square_arr = self.enc_array_same_num(sigma_t_square, self.m)
-        self.noise_level_assert(all_sigma_t_square_arr)
+        
         # for debug: dec_sigma_t = self.csp.decrypt_arr(all_sigma_t_arr)
         # for debug: dec_sigma_t_s = self.csp.decrypt_arr(all_sigma_t_square_arr)
 
         # in order to avoid the need to build the expanded diagonal matrices
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
         rates_assist_arr = self.safe_math(rates_assist_arr, all_sigma_t_arr, '+')
-        self.noise_level_assert(rates_assist_arr)
+        
         # for debug: dec_rates_assist = self.csp.decrypt_arr(rates_assist_arr)
         # for debug: dec_all_sigma_t_arr = self.csp.decrypt_arr(all_sigma_t_arr)
         rates_assist_arr = self.safe_mul(rates_assist_arr, sum_ri_square_arr)
-        self.noise_level_assert(rates_assist_arr)
+        
         #dec_rates_assist_arr = self.csp.decrypt_arr(rates_assist_arr)
         #print("meir: ", dec_rates_assist_arr)
 
         s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
         s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_square_arr, '-')
-        self.noise_level_assert(s0_assist_arr)
+        
         #print("calc rates and s0 values starting at: ", time.perf_counter())
         enc_array_size = self.csp.get_enc_n() // 2
         elements_in_vector = enc_array_size // self.m
         elements_in_vector = min(self.n, elements_in_vector)
 
+        meth_vals_vector_num = 0
         for meth_vals in meth_vals_list:
-            #for i in range(0, self.n):
             for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*self.m)
                 r_mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
-                self.noise_level_assert(r_mult_assist)
                 rate = self.calc_encrypted_array_sum(r_mult_assist, self.m)
-                self.noise_level_assert(rate)
-                rates = self.safe_math(rates, (rate >> i), '+')
-                self.noise_level_assert(rates)
-                #s0_assist_arr = self.csp.recrypt_array(s0_assist_arr)
-                #shifted_vals = self.csp.recrypt_array(shifted_vals)
+                rates = self.safe_math(rates, (rate >> (i+meth_vals_vector_num*elements_in_vector)), '+')
                 s0_mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
-                self.noise_level_assert(s0_mult_assist)
                 s0 = self.calc_encrypted_array_sum(s0_mult_assist, self.m)
-                self.noise_level_assert(s0)
-                s0_vals = self.safe_math(s0_vals, (s0 >> i), '+')
-                self.noise_level_assert(s0_vals)
-        #print("calc rates and s0 values ending at: ", time.perf_counter())
+                s0_vals = self.safe_math(s0_vals, (s0 >> (i+meth_vals_vector_num*elements_in_vector)), '+')
+                
+            meth_vals_vector_num += 1
 
-
-        # for debug
-        #dec_s0 = self.csp.decrypt_arr(s0_vals)
-        #dec_r = self.csp.decrypt_arr(rates)
-        #print("meir:", dec_s0)
-        # return dec_rates, dec_s0
-        #
         return rates, s0_vals, gamma_denom
 
 
@@ -326,93 +320,135 @@ class MLE:
         # calc the matrix  S = (S_ij - s0_i)*r_i
         # the main issue here is that S_ij is represented as long vectors which cannot be transposed as
         # the encrypted vectors do not support transposing
-        # this means that each n elements in S_ij need to be multiplied by the same r_i
+        # this means that each n elements in S_ij need to be multiplied by the same r_i and the same s0_i needs to be
+        # reduced from it
+
+        # in order to achieve this, we need to create 2 table sets: one for the s0 and one for the rate
+        # each table set consists of one or more tables. The number of tables is determined according to the
+        # value of n*m. If n*m is larger than the table size provided by the encryption, more than a single table
+        # is required to hold the values.
+        # Each table set will contain m copies of each of the n s0/rate values
+        # This will make it easier to perform the subtraction and multiplication operations with relation to Sij
+
+        print("Executing time step")
 
         enc_array_size = self.csp.get_enc_n() // 2 # the array is represented
+        mask = np.zeros(enc_array_size, dtype=np.int64)
+        enc_zeros = self.csp.encrypt_array(mask)
+        mask[0] = 1
+        encoded_mask = self.csp.encode_array(mask)
+
+        calc_assist_s0 = []
+        calc_assist_rates = []
+        table_size = self.n * self.m
+        num_of_assist_tables = math.ceil(table_size/enc_array_size)
+        iterations = min(self.m, (enc_array_size // self.m))
         # the addition of 0 causes the creation of a new encrypted array.
         # without it, the variable on the left side of the = will just be a pointer to the one on the right
-        calc_assist_s0 = s0_vals + 0
-        calc_assist_rates = rates + 0
-        iterations = min(self.m, (enc_array_size // self.m))-1
 
-        for i in range(1, iterations):
-            calc_assist_s0 = self.safe_math(calc_assist_s0, s0_vals >> (i*self.m - i), '+')
-            calc_assist_rates = self.safe_math(calc_assist_rates, rates >> (i*self.m - i), '+')
+        for i in range(num_of_assist_tables):
+            calc_assist_s0.append(enc_zeros + 0)
+            calc_assist_rates.append(enc_zeros + 0)
+            #calc_assist_s0.append(self.safe_math((s0_vals << (i*iterations)), encoded_mask, '*'))
+            #calc_assist_rates.append(self.safe_math((rates << (i*iterations)), encoded_mask, '*'))
 
-        self.noise_level_assert(calc_assist_s0)
-        self.noise_level_assert(calc_assist_rates)
-        mask = np.zeros(enc_array_size, dtype=np.int64)
-        for i in range(iterations):
-            mask[i*self.m] = 1
-        encoded_mask = self.csp.encode_array(mask)
-        calc_assist_s0 = self.safe_mul(calc_assist_s0, encoded_mask)
-        calc_assist_rates = self.safe_mul(calc_assist_rates, encoded_mask)
+        # at the end of this loop the calc_assist_s0 and calc_assist_rate table sets should have an S0/rate value
+        # in each i*m cell
+        set_index = 0
+        iter_num = 0
+        for i in range(0, self.n):
+            assert set_index < num_of_assist_tables, "Table set index is higher than number of tables in the set"
 
-        self.noise_level_assert(calc_assist_s0)
-        self.noise_level_assert(calc_assist_rates)
+            temp_s0_vals = self.safe_math(s0_vals << i, encoded_mask, '*')
+            temp_rates = self.safe_math(rates << i, encoded_mask, '*')
+            calc_assist_s0[set_index] = self.safe_math(calc_assist_s0[set_index], (temp_s0_vals >> (iter_num*self.m)), '+')
+            calc_assist_rates[set_index] = self.safe_math(calc_assist_rates[set_index], (temp_rates >> (iter_num*self.m)), '+')
+            iter_num += 1
+            if iter_num == iterations:
+                iter_num = 0
+                set_index += 1
 
-        separated_s0 = calc_assist_s0 + 0
-        separated_rates = calc_assist_rates + 0
+        #now duplicate it m times
+        for i in range(num_of_assist_tables):
+            temp_s0 = calc_assist_s0[i] + 0
+            temp_rates = calc_assist_rates[i] + 0
+            for j in range(1, self.m):
+                calc_assist_s0[i] = self.safe_math(calc_assist_s0[i], (temp_s0 >> j), '+')
+                calc_assist_rates[i] = self.safe_math(calc_assist_rates[i], (temp_rates >> j), '+')
 
-        for i in range(1, self.m):
-            calc_assist_s0 = self.safe_math(calc_assist_s0, (separated_s0 >> i), '+')
-            calc_assist_rates = self.safe_math(calc_assist_rates, (separated_rates >> i), '+')
+        ''' validation check
+        all_s0 = self.csp.decrypt_arr(s0_vals)
+        set_index = 0
+        iter_index = 0
+        decrypted = self.csp.decrypt_arr(calc_assist_s0[set_index])
 
-        self.noise_level_assert(calc_assist_s0)
-        self.noise_level_assert(calc_assist_rates)
+        for i in range(self.n):
+            val = all_s0[i]
+            print("now checking: ", val)
+            for j in range(self.m):
+                if decrypted[j+iter_index*self.m] != val:
+                    print("val is ", val, " while dec is: ", decrypted[j+iter_index*self.m])
+            iter_index += 1
+            if iter_index == iterations:
+                iter_index = 0
+                set_index += 1
+                if set_index < num_of_assist_tables:
+                    decrypted = self.csp.decrypt_arr(calc_assist_s0[set_index])
+
+        print("We're done!!")
+        '''
+
         # create an array full of gamma values in order to easily multiply each Sij by gamma
         gamma_array = self.enc_array_same_num(gamma, enc_array_size)
-        self.noise_level_assert(gamma_array)
+        
 
         tic = time.perf_counter()
         #print("calc new ages starting at: ", tic)
-        for meth_vals in meth_vals_list:
+        new_ages = []
+        for i, meth_vals in enumerate(meth_vals_list):
             meth_vals_gamma = self.safe_mul(meth_vals, gamma_array)
 
-            self.noise_level_assert(meth_vals_gamma)
+            
             # now we need to calc the numerator of the time step.
             # which is: sum(r_i(meth_vals_gamma - s^0_i))
             # first lets calculate (meth_vals_gamma - s^0_i)
-            p = self.safe_math(meth_vals_gamma, calc_assist_s0, '-')
-            self.noise_level_assert(p)
+            p = self.safe_math(meth_vals_gamma, calc_assist_s0[i], '-')
+            
             # now lets multiply by r_i
-            r_p = self.safe_mul(p, calc_assist_rates)
-            self.noise_level_assert(r_p)
+            r_p = self.safe_mul(p, calc_assist_rates[i])
+            
             #dec_r_p = self.csp.decrypt_arr(r_p)
             # now the tricky part - calculate the sums for each tj
             # we will use the mask to sum each r_p_j*m
             # this should give us the required sum for each tj
 
-            new_ages = r_p + 0
+            new_ages.append(r_p + 0)
 
-            for i in range(1, iterations):
-                new_ages = self.safe_math(new_ages, (r_p << i*self.m), '+')
+            for j in range(1, iterations):
+                new_ages[i] = self.safe_math(new_ages[i], (r_p << j*self.m), '+')
 
-            self.noise_level_assert(new_ages)
+            
             mask = np.ones(self.m, dtype=np.int64)
             encoded_mask = self.csp.encode_array(mask)
-            new_ages = self.safe_mul(new_ages, encoded_mask)
-            self.noise_level_assert(new_ages)
+            new_ages[i] = self.safe_mul(new_ages[i], encoded_mask)
+            
             #encrypted_mask = self.csp.encrypt_array(mask)
             #new_ages = self.csp.sum_array(self.safe_mul(r_p, encrypted_mask))
-            '''
-            
-            for i in range(1, m):
-                # new_ages += ((self.csp.sum_array(self.safe_mul(r_p, (encrypted_mask >> i)))) >> i)
-                new_ages += ((self.calc_encrypted_array_sum(self.safe_mul(r_p, (encrypted_mask >> i)), enc_array_size)) >> i)
-            '''
+
         #print("calc new ages took: ", time.perf_counter()-tic)
 
         # now we just need to calculate the denominator for the site step
         # which is sum(r_i^2)
         ri_squared = self.safe_power_of(rates, 2)
-        self.noise_level_assert(ri_squared)
+        
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
-        self.noise_level_assert(sum_ri_squared)
+        
         #dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
         #print("dec sum ri squared 1: ", dec_sum_ri_squared)
 
-        return new_ages, sum_ri_squared
+        for i in range(1, len(new_ages)):
+            new_ages[0] = self.safe_math(new_ages[0], new_ages[i], '+')
+        return new_ages[0], sum_ri_squared
 
 
     def calc_model(self):
