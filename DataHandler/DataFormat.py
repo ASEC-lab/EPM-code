@@ -24,6 +24,10 @@ def format_array_for_enc(arr: np.ndarray) -> np.ndarray:
     return int_arr
 
 
+def format_array_for_dec(arr):
+    result = np.array(arr)/(10 ** FLOATING_DIGIT_ROUND)
+    return result
+
 def restore_array(arr: np.ndarray) -> np.ndarray:
     """
     revert the formatting from the previous function

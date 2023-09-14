@@ -11,7 +11,6 @@ from Pyfhel import PyCtxt, Pyfhel, PyPtxt
 import sys
 from sympy.ntheory.modular import crt
 import time
-
 def epm_orig():
     """
     EPM implementation without encryption. Used for benchmarking.
@@ -85,6 +84,11 @@ def epm_orig_new_method():
 def test_do():
     do = DO()
     ages = do.calc_model()
+    return ages
+
+def test_do_multi_process():
+    do = DO()
+    ages = do.calc_model_multi_process()
     return ages
 
 def bgv_mult():
@@ -324,7 +328,8 @@ def main():
     #bgv_test2()
 
     # this runs the encrypted version
-    ages = test_do()
+    #ages = test_do()
+    ages = test_do_multi_process()
     # epm cleartext testing using the new algorithm without division
     #ages = epm_orig_new_method()
     # original algorithm

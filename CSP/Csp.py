@@ -12,12 +12,12 @@ encrypted and masked
 
 class CSP:
 
-    def __init__(self, prime):
+    def __init__(self, prime, enc_n):
         self.__public_key = None
         self.__private_key = None
         #self.__pyfhelCtxt = None
         self.__prime = prime
-        self.__n = 2 ** 13
+        self.__n = enc_n
         # generate the public/private keys upon init
         self.__gen_enc_keys()
 
