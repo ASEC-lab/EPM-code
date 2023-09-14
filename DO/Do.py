@@ -89,7 +89,7 @@ class DO:
 
 
 
-    def run_pearson_correlation(self, meth_vals: np.ndarray, ages: np.ndarray):
+    def run_pearson_correlation(self, meth_vals: np.ndarray, ages: np.ndarray, percentage):
         """
         The pearson correlation algorithm for reducing the amount of processed data
         @param meth_vals: methylation values from input data
@@ -100,7 +100,7 @@ class DO:
         # correlation of .80 will return ~700 site indices
         # correlation of .91 will return ~24 site indices
         # these figures are useful for debug, our goal is to run the 700 sites
-        correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
+        correlated_meth_val_indices = np.where(abs_pcc_coefficients > percentage)[0]
         # correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
         correlated_meth_vals = meth_vals[correlated_meth_val_indices, :]
         return correlated_meth_vals
@@ -223,21 +223,21 @@ class DO:
 
         return True
 
-    def calc_model_multi_process(self):
+    def calc_model_multi_process(self, num_of_primes=10, enc_n=2**13, correlation=0.91):
         tic = time.perf_counter()
-        NUM_OF_PRIMES = 10
-        ENC_N = 2**13
+        NUM_OF_PRIMES = num_of_primes
+        ENC_N = enc_n
         num_of_cores = cpu_count()*2
         calc_per_prime_queue = Queue()
         results_queue = Queue()
         processes = []
-        #primes = []
-        #self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
-        primes = read_primes_from_file("very_large_primes.txt")
-        primes = primes[0:NUM_OF_PRIMES]
+        primes = []
+        self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
+        #primes = read_primes_from_file("very_large_primes.txt")
+        #primes = primes[0:NUM_OF_PRIMES]
         train_data = self.read_train_data()
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
+        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages, correlation)
         #correlated_meth_vals = train_methylation_values
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
