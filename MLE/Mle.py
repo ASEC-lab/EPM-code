@@ -340,8 +340,9 @@ class MLE:
 
         calc_assist_s0 = []
         calc_assist_rates = []
-        table_size = self.n * self.m
-        num_of_assist_tables = math.ceil(table_size/enc_array_size)
+        #table_size = self.n * self.m
+        num_of_assist_tables = len(meth_vals_list)
+        print("num of assist tables: ", num_of_assist_tables)
         iterations = min(self.m, (enc_array_size // self.m))
         # the addition of 0 causes the creation of a new encrypted array.
         # without it, the variable on the left side of the = will just be a pointer to the one on the right
@@ -349,15 +350,13 @@ class MLE:
         for i in range(num_of_assist_tables):
             calc_assist_s0.append(enc_zeros + 0)
             calc_assist_rates.append(enc_zeros + 0)
-            #calc_assist_s0.append(self.safe_math((s0_vals << (i*iterations)), encoded_mask, '*'))
-            #calc_assist_rates.append(self.safe_math((rates << (i*iterations)), encoded_mask, '*'))
 
         # at the end of this loop the calc_assist_s0 and calc_assist_rate table sets should have an S0/rate value
         # in each i*m cell
         set_index = 0
         iter_num = 0
         for i in range(0, self.n):
-            assert set_index < num_of_assist_tables, "Table set index is higher than number of tables in the set"
+            assert set_index < num_of_assist_tables, "Table set index is {} higher than number of tables in the set {}".format(set_index, num_of_assist_tables)
 
             temp_s0_vals = self.safe_math(s0_vals << i, encoded_mask, '*')
             temp_rates = self.safe_math(rates << i, encoded_mask, '*')
@@ -461,6 +460,9 @@ class MLE:
         sum_ri_squared = 1
         for i in range(iter):
             rates, s0_vals, gamma_denom = self.adapted_site_step(self.ages, self.meth_val_list, sum_ri_squared)
+            #rates = self.csp.encrypt_array(np.array([1]))
+            #s0_vals = self.csp.encrypt_array(np.array([1]))
+            #gamma_denom = self.csp.encrypt_array(np.array([1]))
             new_ages, sum_ri_squared = self.adapted_time_step(rates, s0_vals, self.meth_val_list, gamma_denom)
             #dec_ages = self.csp.decrypt_arr(new_ages)
             #dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)

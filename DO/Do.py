@@ -227,7 +227,7 @@ class DO:
         tic = time.perf_counter()
         NUM_OF_PRIMES = num_of_primes
         ENC_N = enc_n
-        num_of_cores = cpu_count()*2
+        num_of_cores = cpu_count()
         calc_per_prime_queue = Queue()
         results_queue = Queue()
         processes = []
@@ -256,7 +256,10 @@ class DO:
 
         file_timestamp = time.strftime("%Y%m%d-%H%M%S")
         log_fp = open('ages_log_'+file_timestamp+'.log', 'w')
-        for process in range(num_of_cores):
+
+        num_of_processes = min(num_of_cores, NUM_OF_PRIMES)
+
+        for process in range(num_of_processes):
             p = Process(target=self.calc_process, args=[calc_per_prime_queue, results_queue, ENC_N])
             processes.append(p)
             p.start()
@@ -270,7 +273,7 @@ class DO:
             p.join()
 
         toc = time.perf_counter()
-        log_fp.write("Num of processes: {}\n".format(num_of_cores))
+        log_fp.write("Num of processes: {}\n".format(num_of_processes))
         log_fp.write("Num of primes: {}\n".format(NUM_OF_PRIMES))
         log_fp.write("poly modulus for encryption: {}\n".format(ENC_N))
         log_fp.write("prime mult length is: {}\n".format(len(str(math.prod(primes)))))
