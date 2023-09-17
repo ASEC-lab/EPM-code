@@ -43,17 +43,10 @@ class DO:
         full_train_data = data_sets.get_example_train_data()
         return full_train_data
 
-    def encrypt_train_data(self, meth_vals, ages, csp):
-        """
-        Prepare and encrypt the training data for sending to MLE
+    def encrypt_meth_vals(self, meth_vals, csp):
 
-        @param meth_vals: methylation values read from the training data
-        @param ages: ages read from the training data
-        @return: Encrypted methylation values and ages
-        """
-        encrypted_meth_vals = {}
         enc_array_size = csp.get_enc_n() // 2
-        m = meth_vals.shape[1]
+        cols = meth_vals.shape[1]
 
         # as the encrypted data is stored in a 1X1 vector format, need to convert the large methylation value
         # array to one or more vectors of this type
@@ -65,27 +58,43 @@ class DO:
         # the new vector will look like this:
         # S_00 S_01 S_02 S_10 S_11 S_12 ...
 
-
         # calculate the amount of individual sites that can fit into a single vector
-        elements_in_vector = enc_array_size // m
+        elements_in_vector = enc_array_size // cols
 
         # now reshape the meth_vals array to match the new format
         meth_vals_total_size = meth_vals.shape[0] * meth_vals.shape[1]
-        meth_vals_new_cols = elements_in_vector*m
+        meth_vals_new_cols = elements_in_vector * cols
         meth_vals_new_rows = meth_vals_total_size // meth_vals_new_cols
         meth_vals_new_rows += 1 if (meth_vals_total_size % meth_vals_new_cols) > 0 else 0
-        meth_vals_new_shape = np.copy(meth_vals)
+        meth_vals_new_shape = np.copy(meth_vals).flatten()
         meth_vals_new_shape.resize((meth_vals_new_rows, meth_vals_new_cols), refcheck=False)
+        # this is a workaround as for some shapes Pyfhel throws an exception on array sizes which are lower than maximum
+        zero_cols_to_add = enc_array_size - meth_vals_new_cols
+        if zero_cols_to_add > 0:
+            temp_arr = np.zeros([meth_vals_new_rows, zero_cols_to_add], dtype=np.int64)
+            meth_vals_new_shape = np.append(meth_vals_new_shape, temp_arr, axis=1)
 
         # create the new encrypted vector dictionary
         print("Encrypting methylation values. shape is: ", meth_vals_new_shape.shape)
         encrypted_vector_list = np.apply_along_axis(csp.encrypt_array, axis=1, arr=meth_vals_new_shape)
+        return encrypted_vector_list
 
+    def encrypt_train_data(self, meth_vals, ages, csp):
+        """
+        Prepare and encrypt the training data for sending to MLE
+
+        @param meth_vals: methylation values read from the training data
+        @param ages: ages read from the training data
+        @return: Encrypted methylation values and ages
+        """
+
+        encrypted_meth_vals = self.encrypt_meth_vals(meth_vals, csp)
+        encrypted_transposed_meth_vals = self.encrypt_meth_vals(meth_vals.T, csp)
         # encrypt the ages
         print("Encrypting ages")
         encrypted_ages = csp.encrypt_array(ages)
 
-        return encrypted_vector_list, encrypted_ages
+        return encrypted_meth_vals, encrypted_transposed_meth_vals, encrypted_ages
 
 
 
@@ -142,6 +151,8 @@ class DO:
         ages = self.run_crt(primes, numerator_list)
         sum_ri_squared = self.run_crt(primes, denom_list)
 
+        print("age numerator:", ages)
+        print("sum_ri_squared: ", sum_ri_squared[0])
         # avoid using numpy as it may have limitation on the object size
         #final_ages = np.array(ages)/sum_ri_squared[0]
         for age_num in ages:
@@ -154,7 +165,6 @@ class DO:
 
     def generate_primes(self, total_primes, primes, enc_n):
         # prime upper bound and lower bound
-
         prime_lb = 2 ** 58
         prime_ub = (2 ** 59) - 1
         num_of_primes = 0
@@ -165,6 +175,7 @@ class DO:
                     # test encryption as for some reason it does not work for every prime
                     ctxt = Pyfhel()
                     try:
+                        print("trying: ",p)
                         result = ctxt.contextGen("bfv", n=enc_n, t=p, sec=128)
                     except ValueError:
                         print("Value Error")
@@ -191,7 +202,6 @@ class DO:
 
         final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
         final_ages = format_array_for_dec(final_ages)
-        prime_mult = math.prod(moduli)
 
         with open('ages_'+file_timestamp+'.log', 'w') as fp:
             fp.write("ages:\n")
@@ -206,9 +216,10 @@ class DO:
                 prime = calc_per_prime_queue.get_nowait()
                 print(current_process().name, " is calculating for prime: ", prime)
                 csp = CSP(prime, enc_n)
-                enc_meth_vals, enc_ages = self.encrypt_train_data(self.formatted_meth_values, self.formatted_ages, csp)
+                enc_meth_vals, enc_transposed_meth_vals, enc_ages = self.encrypt_train_data(self.formatted_meth_values,
+                                                                                            self.formatted_ages, csp)
                 mle = MLE(csp)
-                mle.get_data_from_DO(enc_meth_vals, enc_ages, self.m, self.n)
+                mle.get_data_from_DO(enc_meth_vals, enc_transposed_meth_vals, enc_ages, self.m, self.n)
 
                 new_ages, sum_ri_squared = mle.calc_model()
                 decrypt_ages = csp.decrypt_arr(new_ages)[0:self.m]
@@ -232,9 +243,9 @@ class DO:
         results_queue = Queue()
         processes = []
         primes = []
-        self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
-        #primes = read_primes_from_file("very_large_primes.txt")
-        #primes = primes[0:NUM_OF_PRIMES]
+        #self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
+        primes = read_primes_from_file("very_large_primes.txt")
+        primes = primes[0:NUM_OF_PRIMES]
         train_data = self.read_train_data()
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
         correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages, correlation)
@@ -257,7 +268,7 @@ class DO:
         file_timestamp = time.strftime("%Y%m%d-%H%M%S")
         log_fp = open('ages_log_'+file_timestamp+'.log', 'w')
 
-        num_of_processes = min(num_of_cores, NUM_OF_PRIMES)
+        num_of_processes = min(num_of_cores*2, NUM_OF_PRIMES)
 
         for process in range(num_of_processes):
             p = Process(target=self.calc_process, args=[calc_per_prime_queue, results_queue, ENC_N])
@@ -316,12 +327,13 @@ class DO:
             logging.debug('Encrypting ages and methylation  values')
             tic = time.perf_counter()
 
-            enc_meth_vals, enc_ages = self.encrypt_train_data(formatted_meth_values, formatted_ages, csp)
+            enc_meth_vals, enc_transposed_meth_vals, enc_ages = self.encrypt_train_data(formatted_meth_values,
+                                                                                        formatted_ages, csp)
             toc = time.perf_counter()
             logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
 
             mle = MLE(csp)
-            mle.get_data_from_DO(enc_meth_vals, enc_ages, m, n)
+            mle.get_data_from_DO(enc_meth_vals, enc_transposed_meth_vals, enc_ages, m, n)
             new_ages, sum_ri_squared = mle.calc_model()
             decrypt_ages = csp.decrypt_arr(new_ages)[0:m]
             decrypt_sum_ri_squared = csp.decrypt_arr(sum_ri_squared)

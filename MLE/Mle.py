@@ -4,6 +4,7 @@ import numpy as np
 import time
 from Pyfhel import Pyfhel, PyCtxt
 from inspect import getframeinfo, stack
+import os
 
 '''
 Machine Learning Engine (MLE) implementation
@@ -25,6 +26,7 @@ class MLE:
 
         self.ages = None
         self.meth_val_list = None
+        self.transposed_meth_val_list = None
         self.m = None
         self.n = None
         self.recrypt_count = 0
@@ -33,9 +35,10 @@ class MLE:
         rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()//2))
         self.rand_mask = csp.encrypt_array(rand_mask)
 
-    def get_data_from_DO(self, meth_val_list, ages, m, n):
+    def get_data_from_DO(self, meth_val_list, enc_transposed_meth_val_list, ages, m, n):
 
         self.meth_val_list = meth_val_list
+        self.transposed_meth_val_list = enc_transposed_meth_val_list
         self.ages = ages
         self.m = m
         self.n = n
@@ -240,12 +243,11 @@ class MLE:
         @return: the model parameters: s0 and rates
         """
 
-        print("Executing site step")
+        print("Process", os.getpid(), "is executing the site step")
         # create empty encrypted arrays to store the s0 and rate values
         dummy_zero = np.zeros(1, dtype=np.int64)
         rates = self.csp.encrypt_array(dummy_zero)
         s0_vals = self.csp.encrypt_array(dummy_zero)
-
 
         sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, self.m)
 
@@ -258,28 +260,19 @@ class MLE:
         
         gamma_denom = self.safe_power_of(sigma_t, 2)
         gamma_denom -= self.safe_mul(self.m, sigma_t_square)
-        
 
         minus_m_arr = self.csp.encrypt_array(np.array([-1*self.m], dtype=np.int64))
         minus_m_arr_enc = self.enc_array_same_num(minus_m_arr, self.m)
         
         rates_assist_arr = self.safe_mul(minus_m_arr_enc, ages)
         
-        # dec_rates_assist_arr = self.csp.decrypt_arr(rates_assist_arr)
-        # dec_ages = self.csp.decrypt_arr(ages)
-        # dec_ages_m = self.csp.decrypt_arr(self.m * ages)
-
         s0_assist_arr = ages
 
         tic = time.perf_counter()
-        #print("calc all_sigma arrays starting at: ", tic)
         all_sigma_t_arr = self.enc_array_same_num(sigma_t, self.m)
         
         all_sigma_t_square_arr = self.enc_array_same_num(sigma_t_square, self.m)
         
-        # for debug: dec_sigma_t = self.csp.decrypt_arr(all_sigma_t_arr)
-        # for debug: dec_sigma_t_s = self.csp.decrypt_arr(all_sigma_t_square_arr)
-
         # in order to avoid the need to build the expanded diagonal matrices
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
         rates_assist_arr = self.safe_math(rates_assist_arr, all_sigma_t_arr, '+')
@@ -314,141 +307,41 @@ class MLE:
 
         return rates, s0_vals, gamma_denom
 
-
-    def adapted_time_step(self, rates, s0_vals, meth_vals_list, gamma):
-
-        # calc the matrix  S = (S_ij - s0_i)*r_i
-        # the main issue here is that S_ij is represented as long vectors which cannot be transposed as
-        # the encrypted vectors do not support transposing
-        # this means that each n elements in S_ij need to be multiplied by the same r_i and the same s0_i needs to be
-        # reduced from it
-
-        # in order to achieve this, we need to create 2 table sets: one for the s0 and one for the rate
-        # each table set consists of one or more tables. The number of tables is determined according to the
-        # value of n*m. If n*m is larger than the table size provided by the encryption, more than a single table
-        # is required to hold the values.
-        # Each table set will contain m copies of each of the n s0/rate values
-        # This will make it easier to perform the subtraction and multiplication operations with relation to Sij
-
-        print("Executing time step")
-
-        enc_array_size = self.csp.get_enc_n() // 2 # the array is represented
-        mask = np.zeros(enc_array_size, dtype=np.int64)
-        enc_zeros = self.csp.encrypt_array(mask)
-        mask[0] = 1
-        encoded_mask = self.csp.encode_array(mask)
-
-        calc_assist_s0 = []
-        calc_assist_rates = []
-        #table_size = self.n * self.m
-        num_of_assist_tables = len(meth_vals_list)
-        print("num of assist tables: ", num_of_assist_tables)
-        iterations = min(self.m, (enc_array_size // self.m))
-        # the addition of 0 causes the creation of a new encrypted array.
-        # without it, the variable on the left side of the = will just be a pointer to the one on the right
-
-        for i in range(num_of_assist_tables):
-            calc_assist_s0.append(enc_zeros + 0)
-            calc_assist_rates.append(enc_zeros + 0)
-
-        # at the end of this loop the calc_assist_s0 and calc_assist_rate table sets should have an S0/rate value
-        # in each i*m cell
-        set_index = 0
-        iter_num = 0
-        for i in range(0, self.n):
-            assert set_index < num_of_assist_tables, "Table set index is {} higher than number of tables in the set {}".format(set_index, num_of_assist_tables)
-
-            temp_s0_vals = self.safe_math(s0_vals << i, encoded_mask, '*')
-            temp_rates = self.safe_math(rates << i, encoded_mask, '*')
-            calc_assist_s0[set_index] = self.safe_math(calc_assist_s0[set_index], (temp_s0_vals >> (iter_num*self.m)), '+')
-            calc_assist_rates[set_index] = self.safe_math(calc_assist_rates[set_index], (temp_rates >> (iter_num*self.m)), '+')
-            iter_num += 1
-            if iter_num == iterations:
-                iter_num = 0
-                set_index += 1
-
-        #now duplicate it m times
-        for i in range(num_of_assist_tables):
-            temp_s0 = calc_assist_s0[i] + 0
-            temp_rates = calc_assist_rates[i] + 0
-            for j in range(1, self.m):
-                calc_assist_s0[i] = self.safe_math(calc_assist_s0[i], (temp_s0 >> j), '+')
-                calc_assist_rates[i] = self.safe_math(calc_assist_rates[i], (temp_rates >> j), '+')
-
-        ''' validation check
-        all_s0 = self.csp.decrypt_arr(s0_vals)
-        set_index = 0
-        iter_index = 0
-        decrypted = self.csp.decrypt_arr(calc_assist_s0[set_index])
-
-        for i in range(self.n):
-            val = all_s0[i]
-            print("now checking: ", val)
-            for j in range(self.m):
-                if decrypted[j+iter_index*self.m] != val:
-                    print("val is ", val, " while dec is: ", decrypted[j+iter_index*self.m])
-            iter_index += 1
-            if iter_index == iterations:
-                iter_index = 0
-                set_index += 1
-                if set_index < num_of_assist_tables:
-                    decrypted = self.csp.decrypt_arr(calc_assist_s0[set_index])
-
-        print("We're done!!")
-        '''
-
-        # create an array full of gamma values in order to easily multiply each Sij by gamma
+    def adapted_time_step_transposed(self, rates, s0_vals, gamma):
+        print("Process", os.getpid(), "is executing the time step")
+        dummy_zero = np.zeros(1, dtype=np.int64)
+        ages = self.csp.encrypt_array(dummy_zero)
+        enc_array_size = self.csp.get_enc_n() // 2
+        calc_assist_s0 = s0_vals + 0
+        calc_assist_rates = rates + 0
+        num_of_ages_in_table = min(enc_array_size // self.n, self.m)
         gamma_array = self.enc_array_same_num(gamma, enc_array_size)
-        
 
-        tic = time.perf_counter()
-        #print("calc new ages starting at: ", tic)
-        new_ages = []
-        for i, meth_vals in enumerate(meth_vals_list):
-            meth_vals_gamma = self.safe_mul(meth_vals, gamma_array)
+        # create an array of s0 and rate values times the number of individuals that can fit in an encrypted array
+        # this will make calculations quicker
+        for i in range(1, num_of_ages_in_table):
+            calc_assist_s0 = self.safe_math(calc_assist_s0, (s0_vals >> (i*self.n)), '+')
+            calc_assist_rates = self.safe_math(calc_assist_rates, (rates >> (i*self.n)), '+')
 
-            
-            # now we need to calc the numerator of the time step.
-            # which is: sum(r_i(meth_vals_gamma - s^0_i))
-            # first lets calculate (meth_vals_gamma - s^0_i)
-            p = self.safe_math(meth_vals_gamma, calc_assist_s0[i], '-')
-            
-            # now lets multiply by r_i
-            r_p = self.safe_mul(p, calc_assist_rates[i])
-            
-            #dec_r_p = self.csp.decrypt_arr(r_p)
-            # now the tricky part - calculate the sums for each tj
-            # we will use the mask to sum each r_p_j*m
-            # this should give us the required sum for each tj
+        age_index = 0
+        for enc_meth_vals in self.transposed_meth_val_list:
+            temp_meth_vals = self.safe_math(enc_meth_vals, gamma_array, '*')
+            temp_meth_vals = self.safe_math(temp_meth_vals, calc_assist_s0, '-')
+            temp_meth_vals = self.safe_math(temp_meth_vals, calc_assist_rates, '*')
+            for j in range(num_of_ages_in_table):
+                age_sum = self.calc_encrypted_array_sum(temp_meth_vals << (j*self.n), self.n)
+                ages = self.safe_math(ages, age_sum >> age_index, '+')
+                age_index += 1
 
-            new_ages.append(r_p + 0)
-
-            for j in range(1, iterations):
-                new_ages[i] = self.safe_math(new_ages[i], (r_p << j*self.m), '+')
-
-            
-            mask = np.ones(self.m, dtype=np.int64)
-            encoded_mask = self.csp.encode_array(mask)
-            new_ages[i] = self.safe_mul(new_ages[i], encoded_mask)
-            
-            #encrypted_mask = self.csp.encrypt_array(mask)
-            #new_ages = self.csp.sum_array(self.safe_mul(r_p, encrypted_mask))
-
-        #print("calc new ages took: ", time.perf_counter()-tic)
+            if age_index == self.m:
+                break
 
         # now we just need to calculate the denominator for the site step
         # which is sum(r_i^2)
         ri_squared = self.safe_power_of(rates, 2)
-        
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
-        
-        #dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)[0]
-        #print("dec sum ri squared 1: ", dec_sum_ri_squared)
 
-        for i in range(1, len(new_ages)):
-            new_ages[0] = self.safe_math(new_ages[0], new_ages[i], '+')
-        return new_ages[0], sum_ri_squared
-
+        return ages, sum_ri_squared
 
     def calc_model(self):
         """
@@ -460,12 +353,8 @@ class MLE:
         sum_ri_squared = 1
         for i in range(iter):
             rates, s0_vals, gamma_denom = self.adapted_site_step(self.ages, self.meth_val_list, sum_ri_squared)
-            #rates = self.csp.encrypt_array(np.array([1]))
-            #s0_vals = self.csp.encrypt_array(np.array([1]))
-            #gamma_denom = self.csp.encrypt_array(np.array([1]))
-            new_ages, sum_ri_squared = self.adapted_time_step(rates, s0_vals, self.meth_val_list, gamma_denom)
-            #dec_ages = self.csp.decrypt_arr(new_ages)
-            #dec_sum_ri_squared = self.csp.decrypt_arr(sum_ri_squared)
+            #new_ages, sum_ri_squared = self.adapted_time_step(rates, s0_vals, self.meth_val_list, gamma_denom)
+            new_ages, sum_ri_squared = self.adapted_time_step_transposed(rates, s0_vals, gamma_denom)
             self.ages = new_ages
 
         return self.ages, sum_ri_squared
