@@ -11,7 +11,7 @@ from Pyfhel import PyCtxt, Pyfhel, PyPtxt
 import sys
 from sympy.ntheory.modular import crt
 import time
-
+import argparse
 
 def epm_orig():
     """
@@ -88,9 +88,10 @@ def test_do():
     ages = do.calc_model()
     return ages
 
-def test_do_multi_process():
+def test_do_multi_process(n, p, c):
     do = DO()
-    ages = do.calc_model_multi_process(num_of_primes=1, enc_n=2**13, correlation=0.80)
+    #ages = do.calc_model_multi_process(num_of_primes=30, enc_n=2**13, correlation=0.80)
+    ages = do.calc_model_multi_process(num_of_primes=p, enc_n=2**n, correlation=c)
     return ages
 
 
@@ -114,7 +115,7 @@ def test_arr_sum():
     print("new sum method took: ", time.perf_counter()-tic, "seconds")
 
 
-def main():
+def main(n, p, c):
     #test_read_primes()
     #test_primes()
     #bgv_test()
@@ -126,7 +127,7 @@ def main():
 
     # this runs the encrypted version
     #ages = test_do()
-    ages = test_do_multi_process()
+    ages = test_do_multi_process(n, p, c)
     # epm cleartext testing using the new algorithm without division
     #ages = epm_orig_new_method()
     # original algorithm
@@ -140,7 +141,22 @@ def main():
     # epm cleartext testing using the original cleartext algorithm with division
 
 
-
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-n", "--polynomial", help="Polynomial modulus")
+    parser.add_argument("-p", "--primes", help="Number of primes")
+    parser.add_argument("-c", "--correlation", help="Correlation percentage")
+
+    args = parser.parse_args()
+    n = 13
+    p = 10
+    c = 0.91
+    if args.polynomial:
+        n = int(args.polynomial)
+    if args.primes:
+        p = int(args.primes)
+    if args.correlation:
+        c = float(args.correlation)
+
+    main(n, p, c)
 
