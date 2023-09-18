@@ -88,6 +88,7 @@ def test_do():
     ages = do.calc_model()
     return ages
 
+
 def test_do_multi_process(n, p, c):
     do = DO()
     #ages = do.calc_model_multi_process(num_of_primes=30, enc_n=2**13, correlation=0.80)
@@ -114,6 +115,7 @@ def test_arr_sum():
     mle.calc_encrypted_array_sum(enc_arr, len(arr))
     print("new sum method took: ", time.perf_counter()-tic, "seconds")
 
+
 def test_max_float():
     max_float = sys.float_info.max
     new_float = 2**3000
@@ -124,32 +126,18 @@ def test_max_float():
         result = new_float//4
     print(result)
 
+
 def main(n, p, c):
     #test_max_float()
     #exit()
-    #test_read_primes()
-    #test_primes()
-    #bgv_test()
-    #bgv_mult()
-    #bfv_test()
-    #test_arr_sum()
-
-    #bgv_test2()
 
     # this runs the encrypted version
-    #ages = test_do()
     ages = test_do_multi_process(n, p, c)
     # epm cleartext testing using the new algorithm without division
     #ages = epm_orig_new_method()
     # original algorithm
     #ages = epm_orig()
     #print(ages)
-    #with open('ages_472.txt', 'w') as f:
-    #    for age in ages:
-    #        f.write(f"{age}\n")
-    #print(len(ages))
-    #mult_primes()
-    # epm cleartext testing using the original cleartext algorithm with division
 
 
 if __name__ == '__main__':

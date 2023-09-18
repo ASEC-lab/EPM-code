@@ -193,6 +193,14 @@ class DO:
                 final_r_square_list.append(res['sum_ri_squared'])
                 i += 1
 
+        with open('for_crt_' + file_timestamp + '.log', 'w') as fp:
+            fp.write("moduli:\n")
+            fp.write(f"{moduli}\n")
+            fp.write("final_ages_list:\n")
+            fp.write(f"{final_ages_list}\n")
+            fp.write("final_r_square_list:\n")
+            fp.write(f"{final_r_square_list}\n")
+
         final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
         final_ages = format_array_for_dec(final_ages)
 
@@ -261,7 +269,7 @@ class DO:
         file_timestamp = time.strftime("%Y%m%d-%H%M%S")
         log_fp = open('ages_log_'+file_timestamp+'.log', 'w')
 
-        num_of_processes = min(num_of_cores*2, NUM_OF_PRIMES)
+        num_of_processes = min(num_of_cores-1, NUM_OF_PRIMES)
 
         for process in range(num_of_processes):
             p = Process(target=self.calc_process, args=[calc_per_prime_queue, results_queue, ENC_N])
