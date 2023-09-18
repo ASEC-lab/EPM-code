@@ -153,12 +153,16 @@ class DO:
 
         print("age numerator:", ages)
         print("sum_ri_squared: ", sum_ri_squared[0])
-        # avoid using numpy as it may have limitation on the object size
-        #final_ages = np.array(ages)/sum_ri_squared[0]
+        # as we are dealing with very large numbers, we may exceed the maximum float value for python
+        # which is given in sys.float_info.max
+        # in this case, we need to replace this with an integer division
         for age_num in ages:
             if age_num > half_prime_mult:
                 age_num = -(prime_mult - age_num)
-            age = age_num/sum_ri_squared[0]
+            try:
+                age = age_num/sum_ri_squared[0]
+            except OverflowError:
+                age = age_num // sum_ri_squared[0]
             final_ages.append(age)
 
         return final_ages
@@ -170,20 +174,9 @@ class DO:
         num_of_primes = 0
         while num_of_primes < total_primes:
             p = random.randint(prime_lb, prime_ub)
-            if (p - 1) % enc_n == 0:
-                if sympy.isprime(p) and p not in primes:
-                    # test encryption as for some reason it does not work for every prime
-                    ctxt = Pyfhel()
-                    try:
-                        print("trying: ",p)
-                        result = ctxt.contextGen("bfv", n=enc_n, t=p, sec=128)
-                    except ValueError:
-                        print("Value Error")
-                        result = False
-                    else:
-                        if result:
-                            primes.append(p)
-                            num_of_primes += 1
+            if ((p - 1) % (2*enc_n) == 0) and sympy.isprime(p) and p not in primes:
+                primes.append(p)
+                num_of_primes += 1
 
     def result_proc(self, num_of_primes, results_queue, file_timestamp):
 
@@ -243,9 +236,9 @@ class DO:
         results_queue = Queue()
         processes = []
         primes = []
-        #self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
-        primes = read_primes_from_file("very_large_primes.txt")
-        primes = primes[0:NUM_OF_PRIMES]
+        self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
+        #primes = read_primes_from_file("very_large_primes.txt")
+        #primes = primes[0:NUM_OF_PRIMES]
         train_data = self.read_train_data()
         individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
         correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages, correlation)

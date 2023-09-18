@@ -114,8 +114,19 @@ def test_arr_sum():
     mle.calc_encrypted_array_sum(enc_arr, len(arr))
     print("new sum method took: ", time.perf_counter()-tic, "seconds")
 
+def test_max_float():
+    max_float = sys.float_info.max
+    new_float = 2**3000
+    try:
+        result = new_float/4
+    except OverflowError:
+        print("could not divide")
+        result = new_float//4
+    print(result)
 
 def main(n, p, c):
+    #test_max_float()
+    #exit()
     #test_read_primes()
     #test_primes()
     #bgv_test()
