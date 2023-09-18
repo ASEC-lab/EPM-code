@@ -147,7 +147,7 @@ class DO:
     def calc_final_ages_crt(self, primes, numerator_list, denom_list):
         final_ages = []
         prime_mult = math.prod(primes)
-        half_prime_mult = prime_mult/2
+        half_prime_mult = prime_mult//2
         ages = self.run_crt(primes, numerator_list)
         sum_ri_squared = self.run_crt(primes, denom_list)
 
