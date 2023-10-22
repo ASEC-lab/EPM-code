@@ -29,7 +29,7 @@ def epm_orig():
     # correlation of .80 will return ~700 site indices
     # correlation of .91 will return ~24 site indices
     # these figures are useful for debug, our goal is to run the 700 sites
-    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
+    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
     #correlated_meth_val = train_methylation_values
     # run the algorithm
@@ -118,9 +118,9 @@ def test_arr_sum():
 
 def test_max_float():
     max_float = sys.float_info.max
-    new_float = 2**3000
+    new_float = 2**5000
     try:
-        result = new_float/4
+        result = new_float % 500
     except OverflowError:
         print("could not divide")
         result = new_float//4
@@ -132,12 +132,15 @@ def main(n, p, c):
     #exit()
 
     # this runs the encrypted version
-    ages = test_do_multi_process(n, p, c)
+    test_do_multi_process(n, p, c)
     # epm cleartext testing using the new algorithm without division
     #ages = epm_orig_new_method()
     # original algorithm
-    #ages = epm_orig()
-    #print(ages)
+    # ages = epm_orig()
+    with open('epm_orig_results.txt', 'w') as fp:
+        fp.write(f"{ages}\n")
+
+    print(ages)
 
 
 if __name__ == '__main__':
