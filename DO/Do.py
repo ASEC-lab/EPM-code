@@ -22,8 +22,6 @@ logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
 Data owner (DO) implementation
 The DO provides the inputs to the MLE for the model calculation
 '''
-
-
 class DO:
 
     def __init__(self):
@@ -31,10 +29,13 @@ class DO:
         self.test_data = None
         self.formatted_ages = None
         self.formatted_meth_values = None
+        self.formatted_test_meth_values = None
         self.m = None
         self.n = None
+        self.test_m = None
+        self.rounds = 2
 
-    def read_train_data(self):
+    def read_example_train_data(self):
         """
         read the sample training data
         @return: training data
@@ -42,6 +43,11 @@ class DO:
         data_sets = DataSets()
         full_train_data = data_sets.get_example_train_data()
         return full_train_data
+
+    def read_example_test_data(self):
+        data_sets = DataSets()
+        full_test_data = data_sets.get_example_test_data()
+        return full_test_data
 
     def encrypt_meth_vals(self, meth_vals, csp):
 
@@ -85,6 +91,7 @@ class DO:
 
         @param meth_vals: methylation values read from the training data
         @param ages: ages read from the training data
+        @param csp: the crypto service provider
         @return: Encrypted methylation values and ages
         """
 
@@ -96,9 +103,19 @@ class DO:
 
         return encrypted_meth_vals, encrypted_transposed_meth_vals, encrypted_ages
 
+    def encrypt_test_data(self, meth_vals, csp):
+        """
+        Prepare and encrypt the training data for sending to MLE
 
+        @param meth_vals: methylation values read from the training data
+        @param csp: the crypto service provider
+        @return: Encrypted methylation values and ages
+        """
+        encrypted_transposed_meth_vals = self.encrypt_meth_vals(meth_vals.T, csp)
 
-    def run_pearson_correlation(self, meth_vals: np.ndarray, ages: np.ndarray, percentage):
+        return encrypted_transposed_meth_vals
+
+    def pearson_correlation_indices(self, meth_vals: np.ndarray, ages: np.ndarray, percentage):
         """
         The pearson correlation algorithm for reducing the amount of processed data
         @param meth_vals: methylation values from input data
@@ -111,8 +128,9 @@ class DO:
         # these figures are useful for debug, our goal is to run the 700 sites
         correlated_meth_val_indices = np.where(abs_pcc_coefficients > percentage)[0]
         # correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
-        correlated_meth_vals = meth_vals[correlated_meth_val_indices, :]
-        return correlated_meth_vals
+        #correlated_meth_vals = meth_vals[correlated_meth_val_indices, :]
+        #return correlated_meth_vals
+        return correlated_meth_val_indices
 
     def calc_rss(self, rates: np.ndarray, s0_vals: np.ndarray, ages: np.ndarray, meth_vals: np.ndarray):
         """
@@ -179,11 +197,14 @@ class DO:
                 num_of_primes += 1
 
     def result_proc(self, num_of_primes, results_queue, file_timestamp):
-
         i = 0
         moduli = []
         final_ages_list = []
         final_r_square_list = []
+        rate_list = []
+        s0_list = []
+        gamma_denom_list = []
+        predicted_ages_list = []
 
         while i < num_of_primes:
             if not results_queue.empty():
@@ -191,24 +212,57 @@ class DO:
                 moduli.append(res['moduli'])
                 final_ages_list.append(res['ages'])
                 final_r_square_list.append(res['sum_ri_squared'])
+
+                rate_list.append(res['rates'])
+                s0_list.append(res['s0_vals'])
+                gamma_denom_list.append(res['gamma_denom'])
+                predicted_ages_list.append(res['predicted_ages'])
                 i += 1
 
         with open('for_crt_' + file_timestamp + '.log', 'w') as fp:
             fp.write("moduli:\n")
             fp.write(f"{moduli}\n")
+            fp.write("rate values:\n")
+            fp.write(f"{rate_list}\n")
+            fp.write("s0 values:\n")
+            fp.write(f"{s0_list}\n")
             fp.write("final_ages_list:\n")
             fp.write(f"{final_ages_list}\n")
             fp.write("final_r_square_list:\n")
             fp.write(f"{final_r_square_list}\n")
+            fp.write("predicted_ages_list:\n")
+            fp.write(f"{predicted_ages_list}\n")
+
 
         final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
         final_ages = format_array_for_dec(final_ages)
+        predicted_ages = self.calc_final_ages_crt(moduli, predicted_ages_list, final_r_square_list)
+        predicted_ages = format_array_for_dec(predicted_ages)
+
+        rates = self.run_crt(moduli, rate_list)
+        s0_vals = self.run_crt(moduli, s0_list)
+
 
         with open('ages_'+file_timestamp+'.log', 'w') as fp:
             fp.write("ages:\n")
             for age in final_ages:
                 fp.write(f"{age}\n")
         print(final_ages)
+
+        with open('rates_s0_' + file_timestamp + '.log', 'w') as fp:
+            fp.write("rates:\n")
+            for rate in rates:
+                fp.write(f"{rate}\n")
+            fp.write("s0_vals:\n")
+            for s0 in s0_vals:
+                fp.write(f"{s0}\n")
+
+        with open('predicted_ages_'+file_timestamp+'.log', 'w') as fp:
+            fp.write("predicted ages:\n")
+            for age in predicted_ages:
+                fp.write(f"{age}\n")
+
+
 
     def calc_process(self, calc_per_prime_queue, results_queue, enc_n):
         while True:
@@ -219,23 +273,34 @@ class DO:
                 csp = CSP(prime, enc_n)
                 enc_meth_vals, enc_transposed_meth_vals, enc_ages = self.encrypt_train_data(self.formatted_meth_values,
                                                                                             self.formatted_ages, csp)
-                mle = MLE(csp)
-                mle.get_data_from_DO(enc_meth_vals, enc_transposed_meth_vals, enc_ages, self.m, self.n)
+                enc_transposed_test_meth_vals = self.encrypt_test_data(self.formatted_test_meth_values, csp)
 
-                new_ages, sum_ri_squared = mle.calc_model()
+                mle = MLE(csp)
+                mle.get_data_from_DO(enc_meth_vals, enc_transposed_meth_vals, enc_transposed_test_meth_vals, enc_ages,
+                                     self.m, self.n, self.test_m, self.rounds)
+
+                new_ages, sum_ri_squared, rates, s0_vals, gamma_denom, predicted_ages = mle.calc_model()
                 decrypt_ages = csp.decrypt_arr(new_ages)[0:self.m]
                 decrypt_sum_ri_squared = csp.decrypt_arr(sum_ri_squared)
+                decrypt_rates = csp.decrypt_arr(rates)[0:self.n]
+                decrypt_s0_vals = csp.decrypt_arr(s0_vals)[0:self.n]
+                decrypt_gamma_denom = csp.decrypt_arr(gamma_denom)
+                decrypt_predicted_ages = csp.decrypt_arr(predicted_ages)[0:self.test_m]
 
                 result['moduli'] = prime
                 result['ages'] = decrypt_ages
                 result['sum_ri_squared'] = decrypt_sum_ri_squared
+                result['rates'] = decrypt_rates
+                result['s0_vals'] = decrypt_s0_vals
+                result['gamma_denom'] = decrypt_gamma_denom
+                result['predicted_ages'] = decrypt_predicted_ages
                 results_queue.put(result)
             except queue.Empty:
                 break
 
         return True
 
-    def calc_model_multi_process(self, num_of_primes=10, enc_n=2**13, correlation=0.91):
+    def calc_model_multi_process(self, num_of_primes=10, enc_n=2**13, correlation=0.91, rounds=2):
         tic = time.perf_counter()
         NUM_OF_PRIMES = num_of_primes
         ENC_N = enc_n
@@ -245,18 +310,23 @@ class DO:
         processes = []
         primes = []
         self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
-        #primes = read_primes_from_file("very_large_primes.txt")
-        #primes = primes[0:NUM_OF_PRIMES]
-        train_data = self.read_train_data()
-        individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages, correlation)
-        #correlated_meth_vals = train_methylation_values
+        train_data = self.read_example_train_data()
+        test_data = self.read_example_test_data()
+        train_individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
+        test_individuals, test_cpg_sites, test_ages, test_methylation_values = test_data
+        correlated_meth_val_indices = self.pearson_correlation_indices(train_methylation_values, train_ages, correlation)
+        correlated_meth_vals = train_methylation_values[correlated_meth_val_indices, :]
+        test_correlated_meth_vals = test_methylation_values[correlated_meth_val_indices, :]
+
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
         self.formatted_meth_values = format_array_for_enc(correlated_meth_vals)
+        self.formatted_test_meth_values = format_array_for_enc(test_correlated_meth_vals)
         self.formatted_ages = format_array_for_enc(train_ages)
         self.m = self.formatted_meth_values.shape[1]
         self.n = self.formatted_meth_values.shape[0]
+        self.test_m = self.formatted_test_meth_values.shape[1]
+        self.rounds = rounds
 
         # the code doesn't support numbers of individuals and/or sites that are
         # larger than the polynomial modulus degree
@@ -295,57 +365,5 @@ class DO:
 
         return 0
 
-    def calc_model(self):
-        train_data = self.read_train_data()
-        # comment out for no reduction
-        data_sets = DataSets()
-        #train_data = data_sets.reduce_data_size(train_data, 7503, 25)
-        individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        correlated_meth_vals = self.run_pearson_correlation(train_methylation_values, train_ages)
-        #correlated_meth_vals = train_methylation_values
-        # format for encryption ie. round to 2 floating digits and convert to integer
-        # as required by the homomorphic encryption
-        logging.debug('Formatting methylation values and ages')
-        formatted_meth_values = format_array_for_enc(correlated_meth_vals)
-        formatted_ages = format_array_for_enc(train_ages)
-        m = formatted_meth_values.shape[1]
-        n = formatted_meth_values.shape[0]
-
-        #primes = read_primes_from_file("/home/meirgold/git/EPM-code/primes.txt")
-        primes = read_primes_from_file("/home/meirgold/git/EPM-code/very_large_primes.txt")
-        moduli = []
-        final_ages_list = []
-        final_r_square_list = []
-        primes_mul = 1
-        #for i in range(7):
-        for i in range(10):
-            plaintext_prime = primes[i]
-            print("Running secure algorithm for prime: ", plaintext_prime)
-            primes_mul *= plaintext_prime
-            csp = CSP(plaintext_prime, 2**13)
-            moduli.append(plaintext_prime)
-
-            logging.debug('Encrypting ages and methylation  values')
-            tic = time.perf_counter()
-
-            enc_meth_vals, enc_transposed_meth_vals, enc_ages = self.encrypt_train_data(formatted_meth_values,
-                                                                                        formatted_ages, csp)
-            toc = time.perf_counter()
-            logging.debug('This operation took: {:0.4f} seconds'.format(toc - tic))
-
-            mle = MLE(csp)
-            mle.get_data_from_DO(enc_meth_vals, enc_transposed_meth_vals, enc_ages, m, n)
-            new_ages, sum_ri_squared = mle.calc_model()
-            decrypt_ages = csp.decrypt_arr(new_ages)[0:m]
-            decrypt_sum_ri_squared = csp.decrypt_arr(sum_ri_squared)
-
-            final_ages_list.append(decrypt_ages)
-            final_r_square_list.append([decrypt_sum_ri_squared[0]])
-
-        print("primes mul: ", primes_mul, " no. of digits: ", len(str(primes_mul)))
-
-        final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
-        final_ages = format_array_for_dec(final_ages)
-        return final_ages
 
 

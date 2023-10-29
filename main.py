@@ -83,16 +83,10 @@ def epm_orig_new_method():
     ages = epm.calc_model_new_method()
     return ages
 
-def test_do():
-    do = DO()
-    ages = do.calc_model()
-    return ages
-
-
-def test_do_multi_process(n, p, c):
+def test_do_multi_process(n, p, c, r):
     do = DO()
     #ages = do.calc_model_multi_process(num_of_primes=30, enc_n=2**13, correlation=0.80)
-    ages = do.calc_model_multi_process(num_of_primes=p, enc_n=2**n, correlation=c)
+    ages = do.calc_model_multi_process(num_of_primes=p, enc_n=2**n, correlation=c, rounds=r)
     return ages
 
 
@@ -116,29 +110,16 @@ def test_arr_sum():
     print("new sum method took: ", time.perf_counter()-tic, "seconds")
 
 
-def test_max_float():
-    max_float = sys.float_info.max
-    new_float = 2**5000
-    try:
-        result = new_float % 500
-    except OverflowError:
-        print("could not divide")
-        result = new_float//4
-    print(result)
-
-
-def main(n, p, c):
-    #test_max_float()
-    #exit()
+def main(n, p, c, r):
 
     # this runs the encrypted version
-    test_do_multi_process(n, p, c)
+    ages = test_do_multi_process(n, p, c, r)
     # epm cleartext testing using the new algorithm without division
     #ages = epm_orig_new_method()
     # original algorithm
     # ages = epm_orig()
-    with open('epm_orig_results.txt', 'w') as fp:
-        fp.write(f"{ages}\n")
+    #with open('epm_orig_results.txt', 'w') as fp:
+    #    fp.write(f"{ages}\n")
 
     print(ages)
 
@@ -148,17 +129,21 @@ if __name__ == '__main__':
     parser.add_argument("-n", "--polynomial", help="Polynomial modulus")
     parser.add_argument("-p", "--primes", help="Number of primes")
     parser.add_argument("-c", "--correlation", help="Correlation percentage")
+    parser.add_argument("-r", "--rounds", help="number of CEM rounds")
 
     args = parser.parse_args()
     n = 13
     p = 10
     c = 0.91
+    r = 2
     if args.polynomial:
         n = int(args.polynomial)
     if args.primes:
         p = int(args.primes)
     if args.correlation:
         c = float(args.correlation)
+    if args.rounds:
+        r = int(args.rounds)
 
-    main(n, p, c)
+    main(n, p, c, r)
 
