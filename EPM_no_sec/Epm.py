@@ -7,9 +7,10 @@ class EPM:
     age_vales = None
     meth_vals = None
 
-    def __init__(self, meth_vals: np.ndarray, age_vals: np.ndarray):
+    def __init__(self, meth_vals: np.ndarray, age_vals: np.ndarray, test_meth_vals: np.ndarray):
         self.age_vals = age_vals
         self.meth_vals = meth_vals
+        self.test_meth_vals = test_meth_vals
 
     def calc_X(self, ages, meth_vals):
 
@@ -241,9 +242,10 @@ class EPM:
         rates, s0 = self.calc_beta_corollary1()
         return rates, s0
 
-    def time_step(self, rates: np.ndarray, s0_vals: np.ndarray):
+    def time_step(self, rates: np.ndarray, s0_vals: np.ndarray, inference=False):
+        meth_vals = self.test_meth_vals if inference else self.meth_vals
         # calc the matrix  S = (S_ij - s0_i)
-        S = np.transpose(np.subtract(np.transpose(self.meth_vals), s0_vals))
+        S = np.transpose(np.subtract(np.transpose(meth_vals), s0_vals))
         # calc Si * ri
         F = S * rates[:, np.newaxis]
         # calc sum(r_i^2)
@@ -254,13 +256,16 @@ class EPM:
     def calc_model(self, iter_limit: int = 100, error_tolerance: float = .00001):
 
         prev_rss = 0
-        iter = 0
+        i = 0
+        rates = None
+        s0 = None
+        predicted_ages = None
 
-        while iter < iter_limit:
+        while i < iter_limit:
             rates, s0 = self.site_step()
             self.age_vals = self.time_step(rates, s0)
             rss = self.calc_rss(rates, s0, self.age_vals)
-            print("iter: {} rss: {} prev_rss: {}".format(iter, rss, prev_rss))
+            print("iter: {} rss: {} prev_rss: {}".format(i, rss, prev_rss))
             if prev_rss > 0:  # don't check this on the first iteration
                 assert rss < prev_rss, "New RSS {} is larger than previous {}".format(rss, prev_rss)
                 rss_diff = prev_rss - rss
@@ -268,14 +273,19 @@ class EPM:
                     break
             prev_rss = rss
 
-            iter += 1
+            i += 1
+
+        # inference
+        if self.test_meth_vals is not None:
+            predicted_ages = self.time_step(rates, s0, inference=True)
 
         model_params = {
             'rss_err' : rss_diff,
-            'num_of_iterations': iter,
+            'num_of_iterations': i,
             's0': s0,
             'rates': rates,
-            'ages': self.age_vals
+            'ages': self.age_vals,
+            'predicted_ages': predicted_ages
         }
 
         return model_params

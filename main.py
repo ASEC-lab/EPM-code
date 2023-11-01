@@ -31,11 +31,29 @@ def epm_orig():
     # these figures are useful for debug, our goal is to run the 700 sites
     correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
     correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
-    #correlated_meth_val = train_methylation_values
+
+    full_test_data = data_sets.get_example_test_data()
+    test_samples, test_cpg_sites, test_ages, test_methylation_values = full_test_data
+    correlated_test_meth_val = test_methylation_values[correlated_meth_val_indices, :]
+
     # run the algorithm
-    epm = EPM(correlated_meth_val, train_ages)
-    model = epm.calc_model(max_iterations, rss)
-    return model
+    epm = EPM(correlated_meth_val, train_ages, correlated_test_meth_val)
+    model_output = epm.calc_model(max_iterations, rss)
+
+    file_timestamp = time.strftime("%Y%m%d-%H%M%S")
+    with open('epm_orig_' + file_timestamp + '.log', 'w') as fp:
+        fp.write("ages\n")
+        fp.write(f"{model_output['ages']}\n")
+        fp.write("predicted_ages\n")
+        fp.write(f"{model_output['predicted_ages']}\n")
+        fp.write("rate values:\n")
+        fp.write(f"{model_output['rates']}\n")
+        fp.write("s0 values:\n")
+        fp.write(f"{model_output['s0']}\n")
+        fp.write("num of iterations:\n")
+        fp.write(f"{model_output['num_of_iterations']}\n")
+        fp.write("rss error:\n")
+        fp.write(f"{model_output['rss_err']}\n")
 
 
 def format_array_for_enc(arr: np.ndarray) -> np.ndarray:
@@ -130,8 +148,10 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--primes", help="Number of primes")
     parser.add_argument("-c", "--correlation", help="Correlation percentage")
     parser.add_argument("-r", "--rounds", help="number of CEM rounds")
+    parser.add_argument("-o", "--orig", action='store_true', help="run the original cleartext algorithm")
 
     args = parser.parse_args()
+
     n = 13
     p = 10
     c = 0.91
@@ -145,5 +165,8 @@ if __name__ == '__main__':
     if args.rounds:
         r = int(args.rounds)
 
-    main(n, p, c, r)
+    if args.orig:
+        model = epm_orig()
+    else:
+        main(n, p, c, r)
 
