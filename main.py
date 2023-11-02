@@ -128,6 +128,30 @@ def test_arr_sum():
     print("new sum method took: ", time.perf_counter()-tic, "seconds")
 
 
+def test_num_of_mult():
+    pyfhelCtxt = Pyfhel()
+    test_arr = np.array([2, 0, 0, 0])
+    mult_arr = np.array([4, 0, 0, 0])
+    for poly in range(12, 17):
+        print("Generating context for poly:", poly, "\n")
+        pyfhelCtxt.contextGen("bfv", n=2**poly, t_bits=20, sec=128)
+        pyfhelCtxt.keyGen()
+        pyfhelCtxt.rotateKeyGen()
+        pyfhelCtxt.relinKeyGen()
+        test_arr_encoded = pyfhelCtxt.encodeInt(test_arr)
+        test_arr_encrypted = pyfhelCtxt.encryptPtxt(test_arr_encoded)
+        mult_arr_encoded = pyfhelCtxt.encodeInt(mult_arr)
+        mult_arr_encrypted = pyfhelCtxt.encryptPtxt(mult_arr_encoded)
+        i = 0
+        while (pyfhelCtxt.noise_level(test_arr_encrypted) > 0) and (i < 12):
+            test_arr_encrypted = ~test_arr_encrypted
+            mult_arr_encrypted = ~mult_arr_encrypted
+            test_arr_encrypted = test_arr_encrypted * mult_arr_encrypted
+            i += 1
+
+        print("Noise level reached 0 after ", i, "iterations\n")
+
+
 def main(n, p, c, r):
 
     # this runs the encrypted version
@@ -143,6 +167,10 @@ def main(n, p, c, r):
 
 
 if __name__ == '__main__':
+
+    test_num_of_mult()
+    exit()
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--polynomial", help="Polynomial modulus")
     parser.add_argument("-p", "--primes", help="Number of primes")
