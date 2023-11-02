@@ -31,12 +31,13 @@ class MLE:
         self.m = None
         self.n = None
         self.test_m = None
-        self.recrypt_count = 0
         self.FILE_COUNTER = 0
         self.csp = csp
         self.rounds = 2
         rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()//2))
         self.rand_mask = csp.encrypt_array(rand_mask)
+        self.recrypt_stats = {'+': 0, '-': 0, '*': 0, '**': 0, 'total_mul_site_step': 0, 'total_mul_time_step': 0,
+                              'array_sum': 0}
 
     def get_data_from_DO(self, meth_val_list, enc_transposed_meth_val_list, enc_transposed_test_meth_vals,
                          ages, m, n, test_m, rounds):
@@ -88,6 +89,7 @@ class MLE:
         if isinstance(result, PyCtxt):
             lvl = self.csp.get_noise_level(result)
             if lvl == 0:
+                self.recrypt_stats[operation] += 2
                 if isinstance(ctxt1, PyCtxt):
                     #print("Noise level of ctxt1 before recrypt: ", self.csp.get_noise_level(ctxt1))
                     ctxt1 = self.csp.recrypt_array(ctxt1)
@@ -129,7 +131,7 @@ class MLE:
             if isinstance(ctxt2, PyCtxt):
                 ctxt2 = self.csp.recrypt_array(ctxt2)
             result = ctxt1 * ctxt2
-            self.recrypt_count += 2
+            self.recrypt_stats['*'] += 2
 
             assert self.csp.get_noise_level(result) > 0, "noise level is zero in multiplication after recrypt. We are doomed"
 
@@ -184,6 +186,7 @@ class MLE:
         encoded_mask_arr = self.csp.encode_array(mask_arr)
         #new_sum = self.safe_mul(summed_arr, encoded_mask_arr)
         new_sum = self.safe_math(summed_arr, encoded_mask_arr, "*")
+        self.recrypt_stats['array_sum'] += 1
 
         #dec_arr = self.csp.decrypt_arr(new_sum)
         #print("dec_arr new algorithm: ", dec_arr[0])
@@ -219,6 +222,7 @@ class MLE:
         if self.csp.get_noise_level(result) == 0:
             enc_arr = self.csp.recrypt_array(enc_arr)
             result = enc_arr ** power
+            self.recrypt_stats['**'] += 1
         ~result # re-liniarize after power as it seems this does not happen automatically
         return result
 
@@ -257,11 +261,13 @@ class MLE:
         
         gamma_denom = self.safe_power_of(sigma_t, 2)
         gamma_denom -= self.safe_mul(self.m, sigma_t_square)
+        self.recrypt_stats['total_mul_site_step'] += 1
 
         minus_m_arr = self.csp.encrypt_array(np.array([-1*self.m], dtype=np.int64))
         minus_m_arr_enc = self.enc_array_same_num(minus_m_arr, self.m)
         
         rates_assist_arr = self.safe_mul(minus_m_arr_enc, ages)
+        self.recrypt_stats['total_mul_site_step'] += 1
         
         s0_assist_arr = ages
 
@@ -274,8 +280,10 @@ class MLE:
         rates_assist_arr = self.safe_math(rates_assist_arr, all_sigma_t_arr, '+')
         
         rates_assist_arr = self.safe_mul(rates_assist_arr, sum_ri_square_arr)
+        self.recrypt_stats['total_mul_site_step'] += 1
         
         s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
+        self.recrypt_stats['total_mul_site_step'] += 1
         s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_square_arr, '-')
 
         enc_array_size = self.csp.get_enc_n() // 2
@@ -287,9 +295,11 @@ class MLE:
             for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*self.m)
                 r_mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
+                self.recrypt_stats['total_mul_site_step'] += 1
                 rate = self.calc_encrypted_array_sum(r_mult_assist, self.m)
                 rates = self.safe_math(rates, (rate >> (i+meth_vals_vector_num*elements_in_vector)), '+')
                 s0_mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
+                self.recrypt_stats['total_mul_site_step'] += 1
                 s0 = self.calc_encrypted_array_sum(s0_mult_assist, self.m)
                 s0_vals = self.safe_math(s0_vals, (s0 >> (i+meth_vals_vector_num*elements_in_vector)), '+')
                 
@@ -323,8 +333,10 @@ class MLE:
         age_index = 0
         for enc_meth_vals in meth_val_list:
             temp_meth_vals = self.safe_math(enc_meth_vals, gamma_array, '*')
+            self.recrypt_stats['total_mul_time_step'] += 1
             temp_meth_vals = self.safe_math(temp_meth_vals, calc_assist_s0, '-')
             temp_meth_vals = self.safe_math(temp_meth_vals, calc_assist_rates, '*')
+            self.recrypt_stats['total_mul_time_step'] += 1
             for j in range(num_of_ages_in_table):
                 age_sum = self.calc_encrypted_array_sum(temp_meth_vals << (j*self.n), self.n)
                 ages = self.safe_math(ages, age_sum >> age_index, '+')
@@ -355,8 +367,26 @@ class MLE:
             new_ages, sum_ri_squared = self.adapted_time_step_transposed(rates, s0_vals, gamma_denom)
             self.ages = new_ages
 
+        with open('recrypt_num.log', 'w') as fp:
+            fp.write("add: ")
+            fp.write(f"{self.recrypt_stats['+']}\n")
+            fp.write("subtract: ")
+            fp.write(f"{self.recrypt_stats['-']}\n")
+            fp.write("mult: ")
+            fp.write(f"{self.recrypt_stats['*']}\n")
+            fp.write("power: ")
+            fp.write(f"{self.recrypt_stats['**']}\n")
+            fp.write("total mul site step:")
+            fp.write(f"{self.recrypt_stats['total_mul_site_step']}\n")
+            fp.write("total mul time step:")
+            fp.write(f"{self.recrypt_stats['total_mul_time_step']}\n")
+            fp.write("array_sum:")
+            fp.write(f"{self.recrypt_stats['array_sum']}\n")
+
         # now perform the inference on the test data
-        if self.transposed_test_meth_val_list is not None:
-            predicted_ages, _ = self.adapted_time_step_transposed(rates, s0_vals, gamma_denom, inference=True)
-        return self.ages, sum_ri_squared, rates, s0_vals, gamma_denom, predicted_ages
+        return self.ages, sum_ri_squared, rates, s0_vals, gamma_denom, self.ages
+        #if self.transposed_test_meth_val_list is not None:
+        #    predicted_ages, _ = self.adapted_time_step_transposed(rates, s0_vals, gamma_denom, inference=True)
+        #return self.ages, sum_ri_squared, rates, s0_vals, gamma_denom, predicted_ages
+
 
