@@ -90,7 +90,6 @@ class MLE:
 
         return result
 
-
     def calc_encrypted_array_sum(self, arr, arr_len: int):
 
         # Fast algorithm for summing encrypted arrays
@@ -258,6 +257,10 @@ class MLE:
                 
             meth_vals_vector_num += 1
 
+        #rates = self.csp.recrypt_array(rates)
+        #s0_vals = self.csp.recrypt_array(s0_vals)
+        #gamma_denom = self.csp.recrypt_array(gamma_denom)
+
         return rates, s0_vals, gamma_denom
 
     def adapted_time_step_transposed(self, rates, s0_vals, gamma, inference=False):
@@ -303,6 +306,8 @@ class MLE:
         ri_squared = self.safe_power_of(rates, 2)
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
 
+        ages = self.csp.recrypt_array(ages)
+        sum_ri_squared = self.csp.recrypt_array(sum_ri_squared)
         return ages, sum_ri_squared
 
     def calc_model(self):
