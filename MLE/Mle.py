@@ -51,22 +51,6 @@ class MLE:
         self.test_m = test_m
         self.rounds = rounds
 
-    def check_noise_lvl(self, ctxt):
-        # check the noise level (number of remaining mult operations)
-        # as the data needs to be decrypted, mask it first
-        #ctxt += self.rand_mask
-        lvl = self.csp.get_noise_level(ctxt)
-        #assert lvl > 0, "reached 0 noised budget"
-
-        if lvl < 20:
-            ctxt = self.csp.recrypt_array(ctxt)
-            self.recrypt_count += 1
-            print("Recrypting. New noise level: ", self.csp.get_noise_level(ctxt))
-            caller = getframeinfo(stack()[3][0])
-            print("%s:%d - %s" % (caller.filename, caller.lineno, " called this"))
-
-        #ctxt -= self.rand_mask
-        return ctxt
 
     def __safe_math_run_op__(self, ctxt1, ctxt2, operation):
 
@@ -106,37 +90,6 @@ class MLE:
 
         return result
 
-    def safe_mul(self, ctxt1, ctxt2):
-        """
-        Safely multiply 2 ciphertext
-        After multiplication it is important to relinearize the array in order to reduce the polynom size
-        failing to do this will result in inability to shift and maybe other bad things which I have not yet discovered
-        In addition, if the noise level reaches 0, it will be impossible to decrypt the data
-        In this case, need to perform a recrypt in order to add some noise level.
-        @param ctxt1: first context to multiply
-        @param ctxt2: second context to multiply
-        @return: the multiplication result
-        """
-
-        # mask before sending to CSP for noise level check - doesn't work with BGV
-        if isinstance(ctxt1, PyCtxt):
-            ctxt1 = self.check_noise_lvl(ctxt1)
-        if isinstance(ctxt2, PyCtxt):
-            ctxt2 = self.check_noise_lvl(ctxt2)
-
-        result = ctxt1 * ctxt2
-        if self.csp.get_noise_level(result) == 0:
-            if isinstance(ctxt1, PyCtxt):
-                ctxt1 = self.csp.recrypt_array(ctxt1)
-            if isinstance(ctxt2, PyCtxt):
-                ctxt2 = self.csp.recrypt_array(ctxt2)
-            result = ctxt1 * ctxt2
-            self.recrypt_stats['*'] += 2
-
-            assert self.csp.get_noise_level(result) > 0, "noise level is zero in multiplication after recrypt. We are doomed"
-
-        result = ~result
-        return result
 
     def calc_encrypted_array_sum(self, arr, arr_len: int):
 
@@ -260,13 +213,13 @@ class MLE:
         sigma_t_square = self.calc_encrypted_array_sum(square_ages, self.m)
         
         gamma_denom = self.safe_power_of(sigma_t, 2)
-        gamma_denom -= self.safe_mul(self.m, sigma_t_square)
+        gamma_denom -= self.safe_math(self.m, sigma_t_square, '*')
         self.recrypt_stats['total_mul_site_step'] += 1
 
         minus_m_arr = self.csp.encrypt_array(np.array([-1*self.m], dtype=np.int64))
         minus_m_arr_enc = self.enc_array_same_num(minus_m_arr, self.m)
         
-        rates_assist_arr = self.safe_mul(minus_m_arr_enc, ages)
+        rates_assist_arr = self.safe_math(minus_m_arr_enc, ages, '*')
         self.recrypt_stats['total_mul_site_step'] += 1
         
         s0_assist_arr = ages
@@ -279,10 +232,10 @@ class MLE:
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
         rates_assist_arr = self.safe_math(rates_assist_arr, all_sigma_t_arr, '+')
         
-        rates_assist_arr = self.safe_mul(rates_assist_arr, sum_ri_square_arr)
+        rates_assist_arr = self.safe_math(rates_assist_arr, sum_ri_square_arr, '*')
         self.recrypt_stats['total_mul_site_step'] += 1
         
-        s0_assist_arr = self.safe_mul(s0_assist_arr, all_sigma_t_arr)
+        s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_arr, '*')
         self.recrypt_stats['total_mul_site_step'] += 1
         s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_square_arr, '-')
 
@@ -294,11 +247,11 @@ class MLE:
         for meth_vals in meth_vals_list:
             for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*self.m)
-                r_mult_assist = self.safe_mul(rates_assist_arr, shifted_vals)
+                r_mult_assist = self.safe_math(rates_assist_arr, shifted_vals, '*')
                 self.recrypt_stats['total_mul_site_step'] += 1
                 rate = self.calc_encrypted_array_sum(r_mult_assist, self.m)
                 rates = self.safe_math(rates, (rate >> (i+meth_vals_vector_num*elements_in_vector)), '+')
-                s0_mult_assist = self.safe_mul(s0_assist_arr, shifted_vals)
+                s0_mult_assist = self.safe_math(s0_assist_arr, shifted_vals, '*')
                 self.recrypt_stats['total_mul_site_step'] += 1
                 s0 = self.calc_encrypted_array_sum(s0_mult_assist, self.m)
                 s0_vals = self.safe_math(s0_vals, (s0 >> (i+meth_vals_vector_num*elements_in_vector)), '+')
