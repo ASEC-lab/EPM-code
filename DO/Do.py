@@ -168,6 +168,7 @@ class DO:
         half_prime_mult = prime_mult//2
         ages = self.run_crt(primes, numerator_list)
         sum_ri_squared = self.run_crt(primes, denom_list)
+        actual_age_num_vals = []
 
         # as we are dealing with very large numbers, we may exceed the maximum float value for python
         # which is given in sys.float_info.max
@@ -175,13 +176,14 @@ class DO:
         for age_num in ages:
             if age_num > half_prime_mult:
                 age_num = -(prime_mult - age_num)
+            actual_age_num_vals.append(age_num)
             try:
                 age = age_num/sum_ri_squared[0]
             except OverflowError:
                 age = age_num // sum_ri_squared[0]
             final_ages.append(age)
 
-        return final_ages
+        return final_ages, max(actual_age_num_vals)
 
     def generate_primes(self, total_primes, primes, enc_n, num_of_bits = 30):
         # prime upper bound and lower bound
@@ -228,7 +230,7 @@ class DO:
             fp.write(f"{final_r_square_list}\n")
 
 
-        final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
+        final_ages, max_age_num = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
         final_ages = format_array_for_dec(final_ages)
 
         rates = self.run_crt(moduli, rate_list)
@@ -239,7 +241,12 @@ class DO:
             fp.write("ages:\n")
             for age in final_ages:
                 fp.write(f"{age}\n")
-        print(final_ages)
+            fp.write("max age numerator:\n")
+            fp.write(f"{max_age_num}\n")
+            fp.write("max age numerator length: ")
+            fp.write(f"{len(str(max_age_num))}\n")
+
+
 
         with open('rates_s0_' + file_timestamp + '.log', 'w') as fp:
             fp.write("rates:\n")
