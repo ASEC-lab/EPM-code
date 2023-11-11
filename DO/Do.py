@@ -169,8 +169,6 @@ class DO:
         ages = self.run_crt(primes, numerator_list)
         sum_ri_squared = self.run_crt(primes, denom_list)
 
-        print("age numerator:", ages)
-        print("sum_ri_squared: ", sum_ri_squared[0])
         # as we are dealing with very large numbers, we may exceed the maximum float value for python
         # which is given in sys.float_info.max
         # in this case, we need to replace this with an integer division
@@ -185,10 +183,10 @@ class DO:
 
         return final_ages
 
-    def generate_primes(self, total_primes, primes, enc_n):
+    def generate_primes(self, total_primes, primes, enc_n, num_of_bits = 30):
         # prime upper bound and lower bound
-        prime_lb = 2 ** 58
-        prime_ub = (2 ** 59) - 1
+        prime_lb = 2 ** num_of_bits
+        prime_ub = (2 ** (num_of_bits + 1)) - 1
         num_of_primes = 0
         while num_of_primes < total_primes:
             p = random.randint(prime_lb, prime_ub)
@@ -204,7 +202,6 @@ class DO:
         rate_list = []
         s0_list = []
         gamma_denom_list = []
-        predicted_ages_list = []
 
         while i < num_of_primes:
             if not results_queue.empty():
@@ -216,7 +213,6 @@ class DO:
                 rate_list.append(res['rates'])
                 s0_list.append(res['s0_vals'])
                 gamma_denom_list.append(res['gamma_denom'])
-                predicted_ages_list.append(res['predicted_ages'])
                 i += 1
 
         with open('for_crt_' + file_timestamp + '.log', 'w') as fp:
@@ -230,14 +226,10 @@ class DO:
             fp.write(f"{final_ages_list}\n")
             fp.write("final_r_square_list:\n")
             fp.write(f"{final_r_square_list}\n")
-            fp.write("predicted_ages_list:\n")
-            fp.write(f"{predicted_ages_list}\n")
 
 
         final_ages = self.calc_final_ages_crt(moduli, final_ages_list, final_r_square_list)
         final_ages = format_array_for_dec(final_ages)
-        predicted_ages = self.calc_final_ages_crt(moduli, predicted_ages_list, final_r_square_list)
-        predicted_ages = format_array_for_dec(predicted_ages)
 
         rates = self.run_crt(moduli, rate_list)
         s0_vals = self.run_crt(moduli, s0_list)
@@ -257,13 +249,6 @@ class DO:
             for s0 in s0_vals:
                 fp.write(f"{s0}\n")
 
-        with open('predicted_ages_'+file_timestamp+'.log', 'w') as fp:
-            fp.write("predicted ages:\n")
-            for age in predicted_ages:
-                fp.write(f"{age}\n")
-
-
-
     def calc_process(self, calc_per_prime_queue, results_queue, enc_n):
         while True:
             try:
@@ -273,19 +258,18 @@ class DO:
                 csp = CSP(prime, enc_n)
                 enc_meth_vals, enc_transposed_meth_vals, enc_ages = self.encrypt_train_data(self.formatted_meth_values,
                                                                                             self.formatted_ages, csp)
-                enc_transposed_test_meth_vals = self.encrypt_test_data(self.formatted_test_meth_values, csp)
 
                 mle = MLE(csp)
-                mle.get_data_from_DO(enc_meth_vals, enc_transposed_meth_vals, enc_transposed_test_meth_vals, enc_ages,
-                                     self.m, self.n, self.test_m, self.rounds)
+                mle.get_data_from_DO(enc_meth_vals, enc_transposed_meth_vals, enc_ages,
+                                     self.m, self.n, self.rounds)
 
-                new_ages, sum_ri_squared, rates, s0_vals, gamma_denom, predicted_ages = mle.calc_model()
+                new_ages, sum_ri_squared, rates, s0_vals, gamma_denom, = mle.calc_model()
                 decrypt_ages = csp.decrypt_arr(new_ages)[0:self.m]
                 decrypt_sum_ri_squared = csp.decrypt_arr(sum_ri_squared)
                 decrypt_rates = csp.decrypt_arr(rates)[0:self.n]
                 decrypt_s0_vals = csp.decrypt_arr(s0_vals)[0:self.n]
                 decrypt_gamma_denom = csp.decrypt_arr(gamma_denom)
-                decrypt_predicted_ages = csp.decrypt_arr(predicted_ages)[0:self.test_m]
+
 
                 result['moduli'] = prime
                 result['ages'] = decrypt_ages
@@ -293,14 +277,13 @@ class DO:
                 result['rates'] = decrypt_rates
                 result['s0_vals'] = decrypt_s0_vals
                 result['gamma_denom'] = decrypt_gamma_denom
-                result['predicted_ages'] = decrypt_predicted_ages
                 results_queue.put(result)
             except queue.Empty:
                 break
 
         return True
 
-    def calc_model_multi_process(self, num_of_primes=10, enc_n=2**13, correlation=0.91, rounds=2):
+    def calc_model_multi_process(self, num_of_primes=10, enc_n=2**13, correlation=0.91, rounds=3, prime_bits=30):
         tic = time.perf_counter()
         NUM_OF_PRIMES = num_of_primes
         ENC_N = enc_n
@@ -309,23 +292,24 @@ class DO:
         results_queue = Queue()
         processes = []
         primes = []
-        self.generate_primes(NUM_OF_PRIMES, primes, ENC_N)
+        print("Generating primes\n")
+        self.generate_primes(NUM_OF_PRIMES, primes, ENC_N, prime_bits)
         train_data = self.read_example_train_data()
-        test_data = self.read_example_test_data()
+       # test_data = self.read_example_test_data()
         train_individuals, train_cpg_sites, train_ages, train_methylation_values = train_data
-        test_individuals, test_cpg_sites, test_ages, test_methylation_values = test_data
+        #test_individuals, test_cpg_sites, test_ages, test_methylation_values = test_data
         correlated_meth_val_indices = self.pearson_correlation_indices(train_methylation_values, train_ages, correlation)
         correlated_meth_vals = train_methylation_values[correlated_meth_val_indices, :]
-        test_correlated_meth_vals = test_methylation_values[correlated_meth_val_indices, :]
+        #test_correlated_meth_vals = test_methylation_values[correlated_meth_val_indices, :]
 
         # format for encryption ie. round to 2 floating digits and convert to integer
         # as required by the homomorphic encryption
         self.formatted_meth_values = format_array_for_enc(correlated_meth_vals)
-        self.formatted_test_meth_values = format_array_for_enc(test_correlated_meth_vals)
+        #self.formatted_test_meth_values = format_array_for_enc(test_correlated_meth_vals)
         self.formatted_ages = format_array_for_enc(train_ages)
         self.m = self.formatted_meth_values.shape[1]
         self.n = self.formatted_meth_values.shape[0]
-        self.test_m = self.formatted_test_meth_values.shape[1]
+        #self.test_m = self.formatted_test_meth_values.shape[1]
         self.rounds = rounds
 
         # the code doesn't support numbers of individuals and/or sites that are

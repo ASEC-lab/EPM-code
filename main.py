@@ -128,10 +128,10 @@ def epm_orig_new_method():
     ages = epm.calc_model_new_method()
     return ages
 
-def test_do_multi_process(n, p, c, r):
+def test_do_multi_process(n, p, c, r, b):
     do = DO()
     #ages = do.calc_model_multi_process(num_of_primes=30, enc_n=2**13, correlation=0.80)
-    ages = do.calc_model_multi_process(num_of_primes=p, enc_n=2**n, correlation=c, rounds=r)
+    ages = do.calc_model_multi_process(num_of_primes=p, enc_n=2**n, correlation=c, rounds=r, prime_bits=b)
     return ages
 
 
@@ -202,11 +202,11 @@ def test_num_of_mult():
 
 
 
-def main(n, p, c, r):
+def main(n, p, c, r, b):
 
 
     # this runs the encrypted version
-    ages = test_do_multi_process(n, p, c, r)
+    ages = test_do_multi_process(n, p, c, r, b)
     # epm cleartext testing using the new algorithm without division
     #ages = epm_orig_new_method()
     # original algorithm
@@ -227,6 +227,7 @@ if __name__ == '__main__':
     parser.add_argument("-p", "--primes", help="Number of primes")
     parser.add_argument("-c", "--correlation", help="Correlation percentage")
     parser.add_argument("-r", "--rounds", help="number of CEM rounds")
+    parser.add_argument("-b", "--bits", help="number bits per prime")
     parser.add_argument("-o", "--orig", action='store_true', help="run the original cleartext algorithm")
 
     args = parser.parse_args()
@@ -235,6 +236,12 @@ if __name__ == '__main__':
     p = 10
     c = 0.91
     r = 2
+    b = 30
+
+    # for large dataset run:
+    # n=14 p=52, c=0.8, r=3, b=30
+
+
     if args.polynomial:
         n = int(args.polynomial)
     if args.primes:
@@ -243,9 +250,11 @@ if __name__ == '__main__':
         c = float(args.correlation)
     if args.rounds:
         r = int(args.rounds)
+    if args.bits:
+        b = int(args.bits)
 
     if args.orig:
         model = epm_orig()
     else:
-        main(n, p, c, r)
+        main(n, p, c, r, b)
 

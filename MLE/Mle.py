@@ -39,16 +39,14 @@ class MLE:
         self.recrypt_stats = {'+': 0, '-': 0, '*': 0, '**': 0, 'total_mul_site_step': 0, 'total_mul_time_step': 0,
                               'array_sum': 0}
 
-    def get_data_from_DO(self, meth_val_list, enc_transposed_meth_val_list, enc_transposed_test_meth_vals,
-                         ages, m, n, test_m, rounds):
+    def get_data_from_DO(self, meth_val_list, enc_transposed_meth_val_list,
+                         ages, m, n, rounds):
 
         self.meth_val_list = meth_val_list
         self.transposed_meth_val_list = enc_transposed_meth_val_list
-        self.transposed_test_meth_val_list = enc_transposed_test_meth_vals
         self.ages = ages
         self.m = m
         self.n = n
-        self.test_m = test_m
         self.rounds = rounds
 
 
@@ -75,13 +73,9 @@ class MLE:
             if lvl == 0:
                 self.recrypt_stats[operation] += 2
                 if isinstance(ctxt1, PyCtxt):
-                    #print("Noise level of ctxt1 before recrypt: ", self.csp.get_noise_level(ctxt1))
                     ctxt1 = self.csp.recrypt_array(ctxt1)
-                    #print("Noise level of ctxt1 after recrypt: ", self.csp.get_noise_level(ctxt1))
                 if isinstance(ctxt2, PyCtxt):
-                    #print("Noise level of ctxt2 before recrypt: ", self.csp.get_noise_level(ctxt2))
                     ctxt2 = self.csp.recrypt_array(ctxt2)
-                    #print("Noise level of ctxt2 after recrypt: ", self.csp.get_noise_level(ctxt2))
 
                 result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
                 lvl = self.csp.get_noise_level(result)
@@ -263,14 +257,11 @@ class MLE:
 
         return rates, s0_vals, gamma_denom
 
-    def adapted_time_step_transposed(self, rates, s0_vals, gamma, inference=False):
+    def adapted_time_step_transposed(self, rates, s0_vals, gamma):
         print("Process", os.getpid(), "is executing the time step")
-        if inference:
-            meth_val_list = self.transposed_test_meth_val_list
-            m = self.test_m
-        else:
-            meth_val_list = self.transposed_meth_val_list
-            m = self.m
+
+        meth_val_list = self.transposed_meth_val_list
+        m = self.m
 
         dummy_zero = np.zeros(1, dtype=np.int64)
         ages = self.csp.encrypt_array(dummy_zero)
@@ -306,6 +297,7 @@ class MLE:
         ri_squared = self.safe_power_of(rates, 2)
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
 
+        # 2 recrypt opretaion to handle multiplication depth issues
         ages = self.csp.recrypt_array(ages)
         sum_ri_squared = self.csp.recrypt_array(sum_ri_squared)
         return ages, sum_ri_squared
@@ -319,7 +311,6 @@ class MLE:
         rates = 0
         s0_vals = 0
         gamma_denom = 0
-        predicted_ages = 0
         for i in range(self.rounds):
             rates, s0_vals, gamma_denom = self.adapted_site_step(self.ages, self.meth_val_list, sum_ri_squared)
             new_ages, sum_ri_squared = self.adapted_time_step_transposed(rates, s0_vals, gamma_denom)
@@ -341,10 +332,6 @@ class MLE:
             fp.write("array_sum:")
             fp.write(f"{self.recrypt_stats['array_sum']}\n")
 
-        # now perform the inference on the test data
-        return self.ages, sum_ri_squared, rates, s0_vals, gamma_denom, self.ages
-        #if self.transposed_test_meth_val_list is not None:
-        #    predicted_ages, _ = self.adapted_time_step_transposed(rates, s0_vals, gamma_denom, inference=True)
-        #return self.ages, sum_ri_squared, rates, s0_vals, gamma_denom, predicted_ages
+        return self.ages, sum_ri_squared, rates, s0_vals, gamma_denom
 
 
