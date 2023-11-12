@@ -49,7 +49,6 @@ class MLE:
         self.n = n
         self.rounds = rounds
 
-
     def __safe_math_run_op__(self, ctxt1, ctxt2, operation):
 
         match operation:
@@ -59,6 +58,9 @@ class MLE:
                 result = ctxt1 - ctxt2
             case '*':
                 result = ctxt1 * ctxt2
+                result = ~result
+            case '**':
+                result = ctxt1 ** ctxt2
                 result = ~result
             case _:
                 assert False, "Operation " + operation + " not supported"
@@ -109,33 +111,19 @@ class MLE:
                 remainder = True
             arr_len = arr_len // 2
             shift_val = arr_len
-            #print("arr_len: ", arr_len)
             shifted = summed_arr << shift_val
-            #dec_arr = self.csp.decrypt_arr(summed_arr)
-            #print("summed: ", dec_arr[0:20])
-            #dec_arr = self.csp.decrypt_arr(shifted)
-            #print("shiftd: ", dec_arr[0:20])
             summed_arr = self.safe_math(summed_arr, shifted, '+')
-            #dec_arr = self.csp.decrypt_arr(summed_arr)
-            #print("---------------------------------------")
-            #print("summed: ", dec_arr[0:20])
-            #print("---------------------------------------")
+
             if remainder:
                 temp_add_arr = self.safe_math(temp_add_arr, (shifted << arr_len), '+')
                 remainder = False
 
         summed_arr = self.safe_math(summed_arr, temp_add_arr, '+')
-        #dec_arr = self.csp.decrypt_arr(summed_arr)
-        #print("last addition: ", dec_arr[0:20])
 
         mask_arr = np.array([1])
         encoded_mask_arr = self.csp.encode_array(mask_arr)
-        #new_sum = self.safe_mul(summed_arr, encoded_mask_arr)
         new_sum = self.safe_math(summed_arr, encoded_mask_arr, "*")
         self.recrypt_stats['array_sum'] += 1
-
-        #dec_arr = self.csp.decrypt_arr(new_sum)
-        #print("dec_arr new algorithm: ", dec_arr[0])
 
         return new_sum
 
@@ -162,15 +150,6 @@ class MLE:
                 i += 1
 
         return num_array
-
-    def safe_power_of(self, enc_arr, power):
-        result = enc_arr ** power
-        if self.csp.get_noise_level(result) == 0:
-            enc_arr = self.csp.recrypt_array(enc_arr)
-            result = enc_arr ** power
-            self.recrypt_stats['**'] += 1
-        ~result # re-liniarize after power as it seems this does not happen automatically
-        return result
 
     def noise_level_assert(self, arr):
         lvl = self.csp.get_noise_level(arr)
@@ -200,12 +179,11 @@ class MLE:
 
         #print("calc sigma_t starting at: ", time.perf_counter())
         sigma_t = self.calc_encrypted_array_sum(ages, self.m)
-        
-        #print("calc sigma_t ended at: ", time.perf_counter())
-        square_ages = self.safe_power_of(ages, 2)
+
+        square_ages = self.safe_math(ages, 2, "**")
         sigma_t_square = self.calc_encrypted_array_sum(square_ages, self.m)
-        
-        gamma_denom = self.safe_power_of(sigma_t, 2)
+
+        gamma_denom = self.safe_math(sigma_t, 2, "**")
         gamma_denom -= self.safe_math(self.m, sigma_t_square, '*')
         self.recrypt_stats['total_mul_site_step'] += 1
 
@@ -294,7 +272,7 @@ class MLE:
 
         # now we just need to calculate the denominator for the site step
         # which is sum(r_i^2)
-        ri_squared = self.safe_power_of(rates, 2)
+        ri_squared = self.safe_math(rates, 2, "**")
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
 
         # 2 recrypt opretaion to handle multiplication depth issues
