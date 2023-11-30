@@ -103,15 +103,45 @@ def epm_orig_new_method():
     return ages
 
 
-def test_do_multi_process(n, p, c, r, b):
-    do = DO()
-    ages = do.calc_model_multi_process(num_of_primes=p, enc_n=2**n, correlation=c, rounds=r, prime_bits=b)
-    return ages
+def calc_ages_multi_process(n, p, c, r, b):
+    tic = time.perf_counter()
+    csp = CSP(2**n)
+    mle = MLE(csp, r)
+    do = DO(num_of_primes=p, correlation=c, prime_bits=b)
+    do.encrypt_and_pass_data_to_mle(csp, mle)
+    mle.calc_model_multi_process()
+    csp.decrypt_and_publish_results(mle.crt_vector, mle.m, mle.n)
+    toc = time.perf_counter()
 
+
+def main1(n, p, c, r, b):
+    arr = np.array([1, 2, 3, 4])
+
+    csp = CSP(2 ** n)
+    mle = MLE(csp, r)
+    do = DO(num_of_primes=p, correlation=c, prime_bits=b)
+    do.encrypt_and_pass_data_to_mle(csp, mle)
+    enc_arr = csp.encrypt_array(arr, 0)
+    shifted = enc_arr << 2
+
+
+    '''
+    ctxt_list = []
+    
+    ctxt = Pyfhel()
+    ctxt_list.append(ctxt)
+    ctxt_list[0].contextGen("bfv", n=2**13, t_bits=30, sec=128)
+    ctxt_list[0].keyGen()
+    ctxt_list[0].rotateKeyGen()
+    ctxt_list[0].relinKeyGen()
+    arr_encoded = ctxt_list[0].encodeInt(arr)
+    arr_encrypted = ctxt_list[0].encryptPtxt(arr_encoded)
+    arr_shifted = arr_encrypted << 2
+    '''
 
 def main(n, p, c, r, b):
     # this runs the encrypted version
-    ages = test_do_multi_process(n, p, c, r, b)
+    calc_ages_multi_process(n, p, c, r, b)
     # epm cleartext testing using the new algorithm without division
     #ages = epm_orig_new_method()
     # original algorithm
@@ -119,7 +149,7 @@ def main(n, p, c, r, b):
     #with open('epm_orig_results.txt', 'w') as fp:
     #    fp.write(f"{ages}\n")
 
-    print(ages)
+    #print(ages)
 
 
 if __name__ == '__main__':

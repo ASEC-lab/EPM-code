@@ -1,53 +1,33 @@
 import math
-
+from multiprocessing import cpu_count, Queue, Process
 import numpy as np
-import time
-from Pyfhel import Pyfhel, PyCtxt
-from inspect import getframeinfo, stack
+from CRT.CrtVector import CrtVector
+from Pyfhel import PyCtxt
 import os
-
+import queue
 '''
 Machine Learning Engine (MLE) implementation
-The MLE receives the encrypted input data from the DO and calculates the model
+The MLE receives the encrypted input data from the DO and calculates the ages
 '''
-
-# Global Definitions
-# number of times to try and generate the random matrix R
-RANDOM_MATRIX_GEN_THRESHOLD = 100
-# maximum value to use in random generated matrix
-# not too high in order to meet the requirements of the homomorphic encryption/decryption
-RANDOM_MATRIX_MAX_VAL = 100
-
 
 
 class MLE:
 
-    def __init__(self, csp):
+    prime_index = None
+    def __init__(self, csp, rounds):
 
-        self.ages = None
-        self.meth_val_list = None
-        self.transposed_meth_val_list = None
-        self.transposed_test_meth_val_list = None
-        self.m = None
-        self.n = None
-        self.test_m = None
-        self.FILE_COUNTER = 0
+        self.m = 0
+        self.n = 0
         self.csp = csp
-        self.rounds = 2
-        rand_mask = np.random.randint(1, high=RANDOM_MATRIX_MAX_VAL, size=(csp.get_enc_n()//2))
-        self.rand_mask = csp.encrypt_array(rand_mask)
-        self.recrypt_stats = {'+': 0, '-': 0, '*': 0, '**': 0, 'total_mul_site_step': 0, 'total_mul_time_step': 0,
-                              'array_sum': 0}
-
-    def get_data_from_DO(self, meth_val_list, enc_transposed_meth_val_list,
-                         ages, m, n, rounds):
-
-        self.meth_val_list = meth_val_list
-        self.transposed_meth_val_list = enc_transposed_meth_val_list
-        self.ages = ages
-        self.m = m
-        self.n = n
         self.rounds = rounds
+        self.crt_vector = CrtVector()
+
+    def get_data_from_DO(self, crt_vector: CrtVector, m: int, n: int):
+
+        self.crt_vector.add_vector(crt_vector)
+        self.m += m
+        self.n += n
+        print("MLE: got data from DO")
 
     def __safe_math_run_op__(self, ctxt1, ctxt2, operation):
 
@@ -68,19 +48,17 @@ class MLE:
         return result
 
     def safe_math(self, ctxt1, ctxt2, operation):
-
         result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
         if isinstance(result, PyCtxt):
-            lvl = self.csp.get_noise_level(result)
+            lvl = self.csp.get_noise_level(self.prime_index, result)
             if lvl == 0:
-                self.recrypt_stats[operation] += 2
                 if isinstance(ctxt1, PyCtxt):
-                    ctxt1 = self.csp.recrypt_array(ctxt1)
+                    ctxt1 = self.csp.recrypt_array(self.prime_index, ctxt1)
                 if isinstance(ctxt2, PyCtxt):
-                    ctxt2 = self.csp.recrypt_array(ctxt2)
+                    ctxt2 = self.csp.recrypt_array(self.prime_index, ctxt2)
 
                 result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
-                lvl = self.csp.get_noise_level(result)
+                lvl = self.csp.get_noise_level(self.prime_index, result)
 
                 assert lvl > 0, "Noise level is 0 even after recrypt"
 
@@ -94,13 +72,9 @@ class MLE:
         # The only caveat here is cases where there is a remainder of the array_size/2.
         # In this case we need to add an extra number which is always located at shift_val*2 + 1
         # so if we shift the array again by the same value and add the first number, we will get
-        # what we are looking for
-        # A the end of the loop, add these numbers to the total sum
+        # the required number
+        # At the end of the loop, add these numbers to the total sum
 
-        # for debug
-        #summed_arr = self.csp.sum_array(arr)
-        #dec_arr = self.csp.decrypt_arr(summed_arr)
-        #print("dec_arr old algorithm: ", dec_arr[0])
 
         summed_arr = arr + 0
         temp_add_arr = 0
@@ -121,9 +95,8 @@ class MLE:
         summed_arr = self.safe_math(summed_arr, temp_add_arr, '+')
 
         mask_arr = np.array([1])
-        encoded_mask_arr = self.csp.encode_array(mask_arr)
+        encoded_mask_arr = self.csp.encode_array(self.prime_index, mask_arr)
         new_sum = self.safe_math(summed_arr, encoded_mask_arr, "*")
-        self.recrypt_stats['array_sum'] += 1
 
         return new_sum
 
@@ -152,7 +125,7 @@ class MLE:
         return num_array
 
     def noise_level_assert(self, arr):
-        lvl = self.csp.get_noise_level(arr)
+        lvl = self.csp.get_noise_level(self.prime_index, arr)
         assert lvl > 0, "noise level is 0"
 
     def adapted_site_step(self, ages, meth_vals_list, sum_ri_square):
@@ -168,35 +141,30 @@ class MLE:
 
         @return: the model parameters: s0 and rates
         """
+        print("Process", os.getpid(), "is executing the site step for prime index: ", self.prime_index)
 
-        print("Process", os.getpid(), "is executing the site step")
-        # create empty encrypted arrays to store the s0 and rate values
+         # create empty encrypted arrays to store the s0 and rate values
         dummy_zero = np.zeros(1, dtype=np.int64)
-        rates = self.csp.encrypt_array(dummy_zero)
-        s0_vals = self.csp.encrypt_array(dummy_zero)
+        rates = self.csp.encrypt_array(dummy_zero, self.prime_index)
+        s0_vals = self.csp.encrypt_array(dummy_zero, self.prime_index)
 
         sum_ri_square_arr = self.enc_array_same_num(sum_ri_square, self.m)
 
-        #print("calc sigma_t starting at: ", time.perf_counter())
         sigma_t = self.calc_encrypted_array_sum(ages, self.m)
 
         square_ages = self.safe_math(ages, 2, "**")
         sigma_t_square = self.calc_encrypted_array_sum(square_ages, self.m)
 
-        gamma_denom = self.safe_math(sigma_t, 2, "**")
-        gamma_denom -= self.safe_math(self.m, sigma_t_square, '*')
-        self.recrypt_stats['total_mul_site_step'] += 1
+        lambda_inv = self.safe_math(sigma_t, 2, "**")
+        lambda_inv -= self.safe_math(self.m, sigma_t_square, '*')
 
-        minus_m_arr = self.csp.encrypt_array(np.array([-1*self.m], dtype=np.int64))
+        minus_m_arr = self.csp.encrypt_array(np.array([-1*self.m], dtype=np.int64), self.prime_index)
         minus_m_arr_enc = self.enc_array_same_num(minus_m_arr, self.m)
         
         rates_assist_arr = self.safe_math(minus_m_arr_enc, ages, '*')
-        self.recrypt_stats['total_mul_site_step'] += 1
         
         s0_assist_arr = ages
-
-        all_sigma_t_arr = self.enc_array_same_num(sigma_t, self.m)
-        
+        all_sigma_t_arr = self.enc_array_same_num(sigma_t, self.m)       
         all_sigma_t_square_arr = self.enc_array_same_num(sigma_t_square, self.m)
         
         # in order to avoid the need to build the expanded diagonal matrices
@@ -204,10 +172,9 @@ class MLE:
         rates_assist_arr = self.safe_math(rates_assist_arr, all_sigma_t_arr, '+')
         
         rates_assist_arr = self.safe_math(rates_assist_arr, sum_ri_square_arr, '*')
-        self.recrypt_stats['total_mul_site_step'] += 1
         
         s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_arr, '*')
-        self.recrypt_stats['total_mul_site_step'] += 1
+
         s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_square_arr, '-')
 
         enc_array_size = self.csp.get_enc_n() // 2
@@ -219,35 +186,26 @@ class MLE:
             for i in range(0, elements_in_vector):
                 shifted_vals = meth_vals << (i*self.m)
                 r_mult_assist = self.safe_math(rates_assist_arr, shifted_vals, '*')
-                self.recrypt_stats['total_mul_site_step'] += 1
                 rate = self.calc_encrypted_array_sum(r_mult_assist, self.m)
                 rates = self.safe_math(rates, (rate >> (i+meth_vals_vector_num*elements_in_vector)), '+')
                 s0_mult_assist = self.safe_math(s0_assist_arr, shifted_vals, '*')
-                self.recrypt_stats['total_mul_site_step'] += 1
                 s0 = self.calc_encrypted_array_sum(s0_mult_assist, self.m)
                 s0_vals = self.safe_math(s0_vals, (s0 >> (i+meth_vals_vector_num*elements_in_vector)), '+')
                 
             meth_vals_vector_num += 1
 
-        #rates = self.csp.recrypt_array(rates)
-        #s0_vals = self.csp.recrypt_array(s0_vals)
-        #gamma_denom = self.csp.recrypt_array(gamma_denom)
+        return rates, s0_vals, lambda_inv
 
-        return rates, s0_vals, gamma_denom
-
-    def adapted_time_step_transposed(self, rates, s0_vals, gamma):
-        print("Process", os.getpid(), "is executing the time step")
-
-        meth_val_list = self.transposed_meth_val_list
-        m = self.m
+    def adapted_time_step_transposed(self, transposed_meth_val_list, rates, s0_vals, lambda_denom):
+        print("Process", os.getpid(), "is executing the time step for prime index: ", self.prime_index)
 
         dummy_zero = np.zeros(1, dtype=np.int64)
-        ages = self.csp.encrypt_array(dummy_zero)
+        ages = self.csp.encrypt_array(dummy_zero, self.prime_index)
         enc_array_size = self.csp.get_enc_n() // 2
         calc_assist_s0 = s0_vals + 0
         calc_assist_rates = rates + 0
-        num_of_ages_in_table = min(enc_array_size // self.n, m)
-        gamma_array = self.enc_array_same_num(gamma, enc_array_size)
+        num_of_ages_in_table = min(enc_array_size // self.n, self.m)
+        lambda_denom_array = self.enc_array_same_num(lambda_denom, enc_array_size)
 
         # create an array of s0 and rate values times the number of individuals that can fit in an encrypted array
         # this will make calculations quicker
@@ -256,18 +214,17 @@ class MLE:
             calc_assist_rates = self.safe_math(calc_assist_rates, (rates >> (i*self.n)), '+')
 
         age_index = 0
-        for enc_meth_vals in meth_val_list:
-            temp_meth_vals = self.safe_math(enc_meth_vals, gamma_array, '*')
-            self.recrypt_stats['total_mul_time_step'] += 1
+        for enc_meth_vals in transposed_meth_val_list:
+            temp_meth_vals = self.safe_math(enc_meth_vals, lambda_denom_array, '*')
             temp_meth_vals = self.safe_math(temp_meth_vals, calc_assist_s0, '-')
             temp_meth_vals = self.safe_math(temp_meth_vals, calc_assist_rates, '*')
-            self.recrypt_stats['total_mul_time_step'] += 1
+
             for j in range(num_of_ages_in_table):
                 age_sum = self.calc_encrypted_array_sum(temp_meth_vals << (j*self.n), self.n)
                 ages = self.safe_math(ages, age_sum >> age_index, '+')
                 age_index += 1
 
-            if age_index == m:
+            if age_index == self.m:
                 break
 
         # now we just need to calculate the denominator for the site step
@@ -276,40 +233,77 @@ class MLE:
         sum_ri_squared = self.calc_encrypted_array_sum(ri_squared, self.n)
 
         # 2 recrypt opretaion to handle multiplication depth issues
-        ages = self.csp.recrypt_array(ages)
-        sum_ri_squared = self.csp.recrypt_array(sum_ri_squared)
+        ages = self.csp.recrypt_array(self.prime_index, ages)
+        sum_ri_squared = self.csp.recrypt_array(self.prime_index, sum_ri_squared)
         return ages, sum_ri_squared
 
-    def calc_model(self):
-        """
-        model calculation
-        @return: ages, rates and s0 values calculated by the 2 steps
-        """
-        sum_ri_squared = 1
-        rates = 0
-        s0_vals = 0
-        gamma_denom = 0
-        for i in range(self.rounds):
-            rates, s0_vals, gamma_denom = self.adapted_site_step(self.ages, self.meth_val_list, sum_ri_squared)
-            new_ages, sum_ri_squared = self.adapted_time_step_transposed(rates, s0_vals, gamma_denom)
-            self.ages = new_ages
+    def calc_process(self, calc_per_prime_queue, results_queue):
+        while True:
+            try:
+                rates = None
+                s0_vals = None
+                #crt_set = calc_per_prime_queue.get_nowait()
+                crt_vec_index = calc_per_prime_queue.get_nowait()
+                crt_set = self.crt_vector.get(crt_vec_index)
 
-        with open('recrypt_num.log', 'w') as fp:
-            fp.write("add: ")
-            fp.write(f"{self.recrypt_stats['+']}\n")
-            fp.write("subtract: ")
-            fp.write(f"{self.recrypt_stats['-']}\n")
-            fp.write("mult: ")
-            fp.write(f"{self.recrypt_stats['*']}\n")
-            fp.write("power: ")
-            fp.write(f"{self.recrypt_stats['**']}\n")
-            fp.write("total mul site step:")
-            fp.write(f"{self.recrypt_stats['total_mul_site_step']}\n")
-            fp.write("total mul time step:")
-            fp.write(f"{self.recrypt_stats['total_mul_time_step']}\n")
-            fp.write("array_sum:")
-            fp.write(f"{self.recrypt_stats['array_sum']}\n")
+                prime_index = crt_set.prime_index
+                self.prime_index = prime_index
+                ages = crt_set.enc_ages
 
-        return self.ages, sum_ri_squared, rates, s0_vals, gamma_denom
+                meth_val_list = crt_set.enc_meth_val_list
+                transposed_meth_val_list = crt_set.enc_transposed_meth_val_list
+                sum_ri_squared = 1
+                for i in range(self.rounds):
+                    rates, s0_vals, lambda_inv = self.adapted_site_step(ages, meth_val_list, sum_ri_squared)
+                    ages, sum_ri_squared = self.adapted_time_step_transposed(transposed_meth_val_list,
+                                                                             rates, s0_vals, lambda_inv)
+                    print("Process:", os.getpid(), " MLE: iteration ", i, "is done")
+
+                crt_set.t_num = ages
+                crt_set.t_denom = sum_ri_squared
+                crt_set.rates = rates
+                crt_set.s0_vals = s0_vals
+                results_queue.put(crt_set)
+
+            except queue.Empty:
+                break
+
+    def calc_model_multi_process(self):
+
+        calc_per_prime_queue = Queue()
+        results_queue = Queue()
+        processes = []
+        num_of_cores = cpu_count()
+        num_of_crt_elements = len(self.crt_vector)
+
+        for i in range(num_of_crt_elements):
+            #calc_per_prime_queue.put(self.crt_vector.get(i))
+            calc_per_prime_queue.put(i)
+
+        # set number of processes according to the minimum between the number of cores
+        # or the number of elements in the crt vector.
+        # need to leave one core available for the result collection process
+        num_of_processes = min(num_of_cores - 1, num_of_crt_elements)
+
+        print("MLE: spawning processes")
+        for process in range(num_of_processes):
+            p = Process(target=self.calc_process, args=[calc_per_prime_queue, results_queue])
+            processes.append(p)
+            p.start()
+            print("MLE: process started")
+
+        # now get the results
+        i = 0
+        while i < num_of_crt_elements:
+            if not results_queue.empty():
+                crt_set = results_queue.get()
+                self.crt_vector.copy_calc_results(crt_set)
+                i += 1
+
+        # verify that all processes completed
+        for p in processes:
+            p.join()
+
+        print("MLE: Calculation complete")
 
 
