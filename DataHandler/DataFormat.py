@@ -1,8 +1,12 @@
 import numpy as np
-from Pyfhel import PyCtxt, Pyfhel, PyPtxt
-import multiprocessing
 
-# a set of functions for formatting the input data
+'''
+a set of functions for formatting the input data
+
+Coded by Meir Goldenberg  
+meirgold@hotmail.com
+
+'''
 
 # Global definitions
 # the number of floating point digits to round to
@@ -25,17 +29,14 @@ def format_array_for_enc(arr: np.ndarray) -> np.ndarray:
 
 
 def format_array_for_dec(arr):
+    '''
+    the opposite of format_array_for_enc
+    formats the array after decryption
+    @param arr: the array to format
+    @return: the formatted array
+    '''
     result = np.array(arr)/(10 ** FLOATING_DIGIT_ROUND)
     return result
-
-def restore_array(arr: np.ndarray) -> np.ndarray:
-    """
-    revert the formatting from the previous function
-    @param arr: the array to restore
-    @return: the restored array
-    """
-    return arr/(10 ** FLOATING_DIGIT_ROUND)
-
 
 '''
 def enc_array(arr: np.ndarray):

@@ -1,13 +1,19 @@
 import numpy as np
-# An implementation of the Epigenetic pacemaker algorithm
-# used mainly for benchmark and validation
+'''
+An implementation of the cleartext Epigenetic pacemaker algorithm
+used for benchmark and validation
+two methods are provided:
+1. The standard cleartext EPM as described in https://www.futuremedicine.com/doi/full/10.2217/epi-2017-0130
+2. A cleartext implementation using no division during calculation as described in our article
+
+Coded by Meir Goldenberg  
+meirgold@hotmail.com
+'''
+
 
 class EPM:
 
-    age_vales = None
-    meth_vals = None
-
-    def __init__(self, meth_vals: np.ndarray, age_vals: np.ndarray, test_meth_vals: np.ndarray):
+    def __init__(self, meth_vals: np.ndarray, age_vals: np.ndarray, test_meth_vals: None):
         self.age_vals = age_vals
         self.meth_vals = meth_vals
         self.test_meth_vals = test_meth_vals
@@ -155,7 +161,6 @@ class EPM:
         return rates, s0
 
     def both_steps_no_division(self, sigma_ri_square):
-        prime = 1462436364289
         mult_val_list = []
         m = self.age_vals.shape[0]  # the number of individuals
         n = self.meth_vals.shape[0]  # the number of sites
@@ -198,21 +203,6 @@ class EPM:
         rates = result[0:n]
         s0_vals = result[n:]
 
-        rates_mod_prime = []
-        s0_mod_prime = []
-        for rate in rates:
-            if (rate % prime) > (prime/2):
-                rates_mod_prime.append((prime-(rate%prime))*(-1))
-            else:
-                rates_mod_prime.append(rate % prime)
-
-        for s0 in s0_vals:
-            if (s0 % prime) > (prime / 2):
-                s0_mod_prime.append((prime - (s0 % prime)) * (-1))
-            else:
-                s0_mod_prime.append(s0 % prime)
-
-
         # calc the matrix  S = (S_ij - s0_i)
         meth_vals_gamma = self.meth_vals * gamma
         S = np.transpose(np.subtract(np.transpose(meth_vals_gamma), s0_vals))
@@ -222,7 +212,6 @@ class EPM:
         r_squared_sum = np.sum(rates ** 2)
         t = np.sum(F, axis=0)
         return t, r_squared_sum
-        #t = np.sum(F, axis=0) / r_squared_sum
 
     def calc_rss(self, rates, s0_vals, ages):
 
@@ -253,10 +242,17 @@ class EPM:
         t = np.sum(F, axis=0) / r_squared_sum
         return t
 
-    def calc_model(self, iter_limit: int = 100, error_tolerance: float = .00001):
+    def calc_ages(self, iter_limit: int = 100, error_tolerance: float = .00001):
+        '''
+        Age calculation according to the EPM algorithm description
+        @param iter_limit: the maximum amount of CEM iterations
+        @param error_tolerance: the RSS error tolerance
+        @return: the model parameters
+        '''
 
         prev_rss = 0
         i = 0
+        rss_diff = 0
         rates = None
         s0 = None
         predicted_ages = None
@@ -280,7 +276,7 @@ class EPM:
             predicted_ages = self.time_step(rates, s0, inference=True)
 
         model_params = {
-            'rss_err' : rss_diff,
+            'rss_err': rss_diff,
             'num_of_iterations': i,
             's0': s0,
             'rates': rates,
@@ -290,18 +286,22 @@ class EPM:
 
         return model_params
 
-    def calc_model_new_method(self):
+    def calc_ages_no_division(self, iterations=3):
+        '''
+        The cleartext implementation of our algorithm using no division during calculation
+        @param iterations: the amount of CEM iterations to perform
+        @return: the age values
+        '''
         i = 0
-        iter_limit = 2
         sigma_ri_squared = 1
 
-        while i < iter_limit:
+        while i < iterations:
             ages, sigma_ri_squared = self.both_steps_no_division(sigma_ri_squared)
             self.age_vals = ages
             i += 1
 
         ages = self.age_vals / sigma_ri_squared
-        print("age numerator: self.age_vals: ", self.age_vals)
-        print("sigma_ri_squared: ", sigma_ri_squared)
+        #print("age numerator: self.age_vals: ", self.age_vals)
+        #print("sigma_ri_squared: ", sigma_ri_squared)
         return ages
 

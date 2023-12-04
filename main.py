@@ -1,44 +1,31 @@
 import numpy as np
 from CSP.Csp import CSP
 from MLE.Mle import MLE
-import datetime
-from EPM_no_sec.Epm import EPM
 from DataHandler.DataSets import DataSets
-from DataHandler.DataFormat import pearson_correlation
+from EPM_no_sec.Epm import EPM
 from DO.Do import DO
-from Pyfhel import PyCtxt, Pyfhel, PyPtxt
-import sys
-from sympy.ntheory.modular import crt
 import time
 import argparse
 
+'''
+main file with examples for running secure and cleartext implementations
 
-def epm_orig():
+Coded by Meir Goldenberg  
+meirgold@hotmail.com
+'''
+
+def epm_cleartext(correlation_percentage=0.8, max_iterations=100):
     """
     EPM implementation without encryption. Used for benchmarking.
     @return: calculated model params
     """
-    max_iterations = 3 #100
     rss = 0.0000001
     data_sets = DataSets()
-    # read training data
-    full_train_data = data_sets.get_example_train_data()
-    train_samples, train_cpg_sites, train_ages, train_methylation_values = full_train_data
-    # run pearson correlation in order to reduce the amount of processed data
-    abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
-    # correlation of .80 will return ~700 site indices
-    # correlation of .91 will return ~24 site indices
-    # these figures are useful for debug, our goal is to run the 700 sites
-    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
-    correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
-
-    full_test_data = data_sets.get_example_test_data()
-    test_samples, test_cpg_sites, test_ages, test_methylation_values = full_test_data
-    correlated_test_meth_val = test_methylation_values[correlated_meth_val_indices, :]
+    ages, correlated_meth_val = data_sets.load_and_prepare_example_data(correlation_percentage)
 
     # run the algorithm
-    epm = EPM(correlated_meth_val, train_ages, correlated_test_meth_val)
-    model_output = epm.calc_model(max_iterations, rss)
+    epm = EPM(correlated_meth_val, ages, None)
+    model_output = epm.calc_ages(max_iterations, rss)
 
     file_timestamp = time.strftime("%Y%m%d-%H%M%S")
     with open('epm_orig_' + file_timestamp + '.log', 'w') as fp:
@@ -56,122 +43,73 @@ def epm_orig():
         fp.write(f"{model_output['rss_err']}\n")
 
 
-def format_array_for_enc(arr: np.ndarray) -> np.ndarray:
-    """
-    prepare the data for usage with the BFV homomorphic encryption
-    1. Round the numbers to the defined number of digits
-    2. Format the numbers into integers
-    @param arr: the array to format
-    @return: the formatted array
-    """
-
-    rounded_arr = arr.round(decimals=2)
-    rounded_arr = rounded_arr * (10 ** 2)
-    int_arr = rounded_arr.astype(int)
-    return int_arr
-
-def epm_orig_new_method():
-    max_iterations = 100
-    rss = 0.0000001
+def epm_cleartext_no_division(correlation_percentage=0.8, iterations=3):
     data_sets = DataSets()
-    # read training data
-    full_train_data = data_sets.get_example_train_data()
-    #full_train_data = data_sets.reduce_data_size(full_train_data, 7503, 25)
-    train_samples, train_cpg_sites, train_ages, train_methylation_values = full_train_data
-    # run pearson correlation in order to reduce the amount of processed data
-    abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
-    # correlation of .80 will return ~700 site indices
-    # correlation of .91 will return ~24 site indices
-    # these figures are useful for debug, our goal is to run the 700 sites
-    correlated_meth_val_indices = np.where(abs_pcc_coefficients > .91)[0]
-    #correlated_meth_val_indices = np.where(abs_pcc_coefficients > .80)[0]
-    correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
-    #correlated_meth_val = train_methylation_values
-
+    ages, correlated_meth_val = data_sets.load_and_prepare_example_data(correlation_percentage)
     # uncomment these lines to use the rounded integer values for this algorithm
-    # unfortunately, the numbers are so large that we receive an overflow
+    # unfortunately, the numbers are too large for numpy to handle that we receive an overflow
     # but this is a good method to print out the expected number sizes we may reach
 
-    formatted_ages = format_array_for_enc(train_ages)
-    formatted_correlated_meth_val = format_array_for_enc(correlated_meth_val)
+    #formatted_ages = format_array_for_enc(train_ages)
+    #formatted_correlated_meth_val = format_array_for_enc(correlated_meth_val)
 
-    #formatted_ages = train_ages
-    #formatted_correlated_meth_val = correlated_meth_val
+    formatted_ages = ages
+    formatted_correlated_meth_val = correlated_meth_val
     # run the algorithm
-    epm = EPM(formatted_correlated_meth_val, formatted_ages, formatted_correlated_meth_val)
-    ages = epm.calc_model_new_method()
-    return ages
+    epm = EPM(formatted_correlated_meth_val, formatted_ages, None)
+    ages = epm.calc_ages_no_division(iterations)
+    file_timestamp = time.strftime("%Y%m%d-%H%M%S")
+    with open('epm_orig_no_division_' + file_timestamp + '.log', 'w') as fp:
+        fp.write("ages\n")
+        fp.write(f"{ages}\n")
 
 
-def calc_ages_multi_process(n, p, c, r, b):
+def calc_ages_secure(polynomial_modulus_degree, num_of_primes, correlation, rounds, prime_bits, auto_recrypt):
     tic = time.perf_counter()
-    csp = CSP(2**n)
-    mle = MLE(csp, r)
-    do = DO(num_of_primes=p, correlation=c, prime_bits=b)
+    csp = CSP(2**polynomial_modulus_degree)
+    mle = MLE(csp, rounds, auto_recrypt)
+    do = DO(num_of_primes=num_of_primes, correlation=correlation, prime_bits=prime_bits)
     do.encrypt_and_pass_data_to_mle(csp, mle)
     mle.calc_model_multi_process()
     csp.decrypt_and_publish_results(mle.crt_vector, mle.m, mle.n)
     toc = time.perf_counter()
+    file_timestamp = time.strftime("%Y%m%d-%H%M%S")
+    with open('epm_secure_' + file_timestamp + '.log', 'w') as fp:
+        fp.write("Parameters:\n")
+        fp.write("  polynomial modulus degree: {}\n".format(polynomial_modulus_degree))
+        fp.write("  num of primes: {}\n".format(num_of_primes))
+        fp.write("  bits per prime: {}\n".format(prime_bits))
+        fp.write("  correlation: {}\n".format(correlation))
+        fp.write("  CEM rounds: {}\n".format(rounds))
+        fp.write("  allow auto recrypt: {}\n".format(auto_recrypt))
+        fp.write("Number of processes: {}\n".format(mle.num_of_processes))
+        fp.write("Total execution time: {} minutes\n".format((toc - tic)/60))
 
 
-def main1(n, p, c, r, b):
-    arr = np.array([1, 2, 3, 4])
-
-    csp = CSP(2 ** n)
-    mle = MLE(csp, r)
-    do = DO(num_of_primes=p, correlation=c, prime_bits=b)
-    do.encrypt_and_pass_data_to_mle(csp, mle)
-    enc_arr = csp.encrypt_array(arr, 0)
-    shifted = enc_arr << 2
-
-
-    '''
-    ctxt_list = []
-    
-    ctxt = Pyfhel()
-    ctxt_list.append(ctxt)
-    ctxt_list[0].contextGen("bfv", n=2**13, t_bits=30, sec=128)
-    ctxt_list[0].keyGen()
-    ctxt_list[0].rotateKeyGen()
-    ctxt_list[0].relinKeyGen()
-    arr_encoded = ctxt_list[0].encodeInt(arr)
-    arr_encrypted = ctxt_list[0].encryptPtxt(arr_encoded)
-    arr_shifted = arr_encrypted << 2
-    '''
-
-def main(n, p, c, r, b):
-    # this runs the encrypted version
-    calc_ages_multi_process(n, p, c, r, b)
-    # epm cleartext testing using the new algorithm without division
-    #ages = epm_orig_new_method()
-    # original algorithm
-    # ages = epm_orig()
-    #with open('epm_orig_results.txt', 'w') as fp:
-    #    fp.write(f"{ages}\n")
-
-    #print(ages)
-
-
-if __name__ == '__main__':
-    #test_num_of_mult()
-    #epm_orig_new_method()
-    #exit()
-
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--polynomial", help="Polynomial modulus")
     parser.add_argument("-p", "--primes", help="Number of primes")
     parser.add_argument("-c", "--correlation", help="Correlation percentage")
     parser.add_argument("-r", "--rounds", help="number of CEM rounds")
     parser.add_argument("-b", "--bits", help="number bits per prime")
-    parser.add_argument("-o", "--orig", action='store_true', help="run the original cleartext algorithm")
+    parser.add_argument("-a", "--auto_recrypt", action='store_true',
+                        help="allow auto recrypt upon low noise level")
+
+    parser.add_argument("-o", "--orig_cleartext", action='store_true',
+                        help="run the original cleartext algorithm")
+    parser.add_argument("-d", "--cleartext_no_division", action='store_true',
+                        help="run the original cleartext algorithm with no division")
 
     args = parser.parse_args()
 
+    # default values
     n = 13
     p = 10
     c = 0.91
     r = 2
     b = 30
+    a = False
 
     # for large dataset run:
     # n=14 p=52, c=0.8, r=3, b=30
@@ -186,9 +124,18 @@ if __name__ == '__main__':
         r = int(args.rounds)
     if args.bits:
         b = int(args.bits)
+    if args.auto_recrypt:
+        a = True
 
-    if args.orig:
-        model = epm_orig()
+    if args.orig_cleartext:
+        epm_cleartext(c, r)
+    elif args.cleartext_no_division:
+        epm_cleartext_no_division(c, r)
     else:
-        main(n, p, c, r, b)
+        calc_ages_secure(n, p, c, r, b, a)
+
+
+if __name__ == '__main__':
+    main()
+
 

@@ -1,25 +1,21 @@
 import numpy as np
 from DataHandler.DataSets import DataSets
 from DataHandler.DataFormat import format_array_for_enc, format_array_for_dec, pearson_correlation
-from MLE.Mle import MLE
-from CSP.Csp import CSP
 from CRT.CrtVector import CrtVector
 from CRT.CrtSet import CrtSet
-from sympy.ntheory.modular import crt
 import time
-import logging, sys
 import random
 import sympy
-import math
-
-# debug print level. Mainly used for function time measurement printing
-logging.basicConfig(stream=sys.stderr, level=logging.DEBUG)
-
 
 '''
 Data owner (DO) implementation
 The DO provides the inputs to the MLE for the model calculation
+
+Coded by Meir Goldenberg  
+meirgold@hotmail.com
 '''
+
+
 class DO:
 
     def __init__(self, num_of_primes=10, correlation=0.91, prime_bits=30):
@@ -118,8 +114,15 @@ class DO:
         #return correlated_meth_vals
         return correlated_meth_val_indices
 
-
-    def generate_primes(self, total_primes, enc_n, num_of_bits=30):
+    def generate_primes(self, total_primes, enc_n, num_of_bits=30) -> list:
+        '''
+        Generate prime values according to FHE requirements and provided number of bits.
+        The requirement is that p-1 is divisible by 2*n, where n is the polynomial modulus degree
+        @param total_primes: the amount of primes to generate
+        @param enc_n: the polynomial modulus degree value
+        @param num_of_bits: amount of bits to use for each prime
+        @return: a list of primes
+        '''
         primes = []
         # prime upper bound and lower bound
         prime_lb = 2 ** num_of_bits
@@ -174,26 +177,3 @@ class DO:
         print("DO: passing encrypted data to MLE")
         mle.get_data_from_DO(crt_vector, self.m, self.n)
         return 0
-
-
-        '''
-        file_timestamp = time.strftime("%Y%m%d-%H%M%S")
-        log_fp = open('ages_log_'+file_timestamp+'.log', 'w')
-
-        mle.get_data_from_DO(self.m, self.n)
-
-
-        toc = time.perf_counter()
-        log_fp.write("Num of processes: {}\n".format(num_of_processes))
-        log_fp.write("Num of primes: {}\n".format(NUM_OF_PRIMES))
-        log_fp.write("poly modulus for encryption: {}\n".format(ENC_N))
-        log_fp.write("prime mult length is: {}\n".format(len(str(math.prod(primes)))))
-        log_fp.write("calculation took: {} minutes\n".format((toc - tic) / 60))
-        log_fp.close()
-        print("calculation took: ", toc - tic, " seconds")
-
-        return 0
-        '''
-
-
-

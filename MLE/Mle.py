@@ -8,21 +8,33 @@ import queue
 '''
 Machine Learning Engine (MLE) implementation
 The MLE receives the encrypted input data from the DO and calculates the ages
+
+Coded by Meir Goldenberg  
+meirgold@hotmail.com
 '''
 
 
 class MLE:
 
     prime_index = None
-    def __init__(self, csp, rounds):
+    allow_auto_recrypt = False
+    num_of_processes = 0
 
+    def __init__(self, csp, rounds, auto_recrypt):
         self.m = 0
         self.n = 0
         self.csp = csp
         self.rounds = rounds
+        self.allow_auto_recrypt = auto_recrypt
         self.crt_vector = CrtVector()
 
     def get_data_from_DO(self, crt_vector: CrtVector, m: int, n: int):
+        '''
+        Receive the data for calculation from the DO
+        @param crt_vector:
+        @param m: number of individuals
+        @param n: number of sites
+        '''
 
         self.crt_vector.add_vector(crt_vector)
         self.m += m
@@ -30,6 +42,14 @@ class MLE:
         print("MLE: got data from DO")
 
     def __safe_math_run_op__(self, ctxt1, ctxt2, operation):
+        '''
+        Perform math operations on two contexts
+        Results for multiplication and power operations must be relinearized
+        @param ctxt1:
+        @param ctxt2:
+        @param operation:
+        @return: the result
+        '''
 
         match operation:
             case '+':
@@ -48,14 +68,24 @@ class MLE:
         return result
 
     def safe_math(self, ctxt1, ctxt2, operation):
+        '''
+        Perform math operations. If noise level is below a threshold, perform a recrypt
+        @param ctxt1: the first encrypted context for the operation
+        @param ctxt2: the second encrypted context for the operation
+        @param operation: the math operation to perform
+        @return: the result of the math operation
+        '''
         result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
         if isinstance(result, PyCtxt):
             lvl = self.csp.get_noise_level(self.prime_index, result)
             if lvl == 0:
-                if isinstance(ctxt1, PyCtxt):
-                    ctxt1 = self.csp.recrypt_array(self.prime_index, ctxt1)
-                if isinstance(ctxt2, PyCtxt):
-                    ctxt2 = self.csp.recrypt_array(self.prime_index, ctxt2)
+                if self.allow_auto_recrypt:
+                    if isinstance(ctxt1, PyCtxt):
+                        ctxt1 = self.csp.recrypt_array(self.prime_index, ctxt1)
+                    if isinstance(ctxt2, PyCtxt):
+                        ctxt2 = self.csp.recrypt_array(self.prime_index, ctxt2)
+                else:
+                    assert False, "Noise level is 0 and auto recrypt is disabled"
 
                 result = self.__safe_math_run_op__(ctxt1, ctxt2, operation)
                 lvl = self.csp.get_noise_level(self.prime_index, result)
@@ -124,10 +154,6 @@ class MLE:
 
         return num_array
 
-    def noise_level_assert(self, arr):
-        lvl = self.csp.get_noise_level(self.prime_index, arr)
-        assert lvl > 0, "noise level is 0"
-
     def adapted_site_step(self, ages, meth_vals_list, sum_ri_square):
         """
         The EPM site step algorithm. This step calculates beta = (XtX)^-1 XtY using the conclusions from
@@ -170,11 +196,9 @@ class MLE:
         # in order to avoid the need to build the expanded diagonal matrices
         # we create a vector with the x_0....x_m values and multiply the Y vector by n copies of this vector
         rates_assist_arr = self.safe_math(rates_assist_arr, all_sigma_t_arr, '+')
-        
         rates_assist_arr = self.safe_math(rates_assist_arr, sum_ri_square_arr, '*')
-        
-        s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_arr, '*')
 
+        s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_arr, '*')
         s0_assist_arr = self.safe_math(s0_assist_arr, all_sigma_t_square_arr, '-')
 
         enc_array_size = self.csp.get_enc_n() // 2
@@ -196,9 +220,22 @@ class MLE:
 
         return rates, s0_vals, lambda_inv
 
-    def adapted_time_step_transposed(self, transposed_meth_val_list, rates, s0_vals, lambda_denom):
-        print("Process", os.getpid(), "is executing the time step for prime index: ", self.prime_index)
+    def adapted_time_step(self, transposed_meth_val_list, rates, s0_vals, lambda_denom):
+        '''
+        The time step implementation
+        In the time step it is required to sum the methylation values per individual.
+        In order to make this operation more efficient, we provide an encrypted transposed array of methylation values
+        where each encrypted array contains the methylation values per individual,
+         as opposed to methylation values per site. This makes the calculation more efficient.
 
+        @param transposed_meth_val_list: transposed methylation values
+        @param rates: encrypted rates from the site step
+        @param s0_vals: encrypted s0 values from the site step
+        @param lambda_denom: the lambda_denom value from the site step
+        @return: predicted t_num and t_denom values
+        '''
+
+        print("Process", os.getpid(), "is executing the time step for prime index: ", self.prime_index)
         dummy_zero = np.zeros(1, dtype=np.int64)
         ages = self.csp.encrypt_array(dummy_zero, self.prime_index)
         enc_array_size = self.csp.get_enc_n() // 2
@@ -238,11 +275,15 @@ class MLE:
         return ages, sum_ri_squared
 
     def calc_process(self, calc_per_prime_queue, results_queue):
+        '''
+        The process for performing the EPM calculation over a single prime
+        @param calc_per_prime_queue:the queue with the prime indices
+        @param results_queue: the queue where the results are placed
+        '''
         while True:
             try:
                 rates = None
                 s0_vals = None
-                #crt_set = calc_per_prime_queue.get_nowait()
                 crt_vec_index = calc_per_prime_queue.get_nowait()
                 crt_set = self.crt_vector.get(crt_vec_index)
 
@@ -255,8 +296,8 @@ class MLE:
                 sum_ri_squared = 1
                 for i in range(self.rounds):
                     rates, s0_vals, lambda_inv = self.adapted_site_step(ages, meth_val_list, sum_ri_squared)
-                    ages, sum_ri_squared = self.adapted_time_step_transposed(transposed_meth_val_list,
-                                                                             rates, s0_vals, lambda_inv)
+                    ages, sum_ri_squared = self.adapted_time_step(transposed_meth_val_list,
+                                                                  rates, s0_vals, lambda_inv)
                     print("Process:", os.getpid(), " MLE: iteration ", i, "is done")
 
                 crt_set.t_num = ages
@@ -269,7 +310,11 @@ class MLE:
                 break
 
     def calc_model_multi_process(self):
-
+        '''
+        The procedure for performing the mult-process EPM secure calculation over the given amount of primes
+        The amount of processes is determined according to the number of primes and available CPUs
+        @return:
+        '''
         calc_per_prime_queue = Queue()
         results_queue = Queue()
         processes = []
@@ -277,20 +322,18 @@ class MLE:
         num_of_crt_elements = len(self.crt_vector)
 
         for i in range(num_of_crt_elements):
-            #calc_per_prime_queue.put(self.crt_vector.get(i))
             calc_per_prime_queue.put(i)
 
         # set number of processes according to the minimum between the number of cores
         # or the number of elements in the crt vector.
         # need to leave one core available for the result collection process
-        num_of_processes = min(num_of_cores - 1, num_of_crt_elements)
+        self.num_of_processes = min(num_of_cores - 1, num_of_crt_elements)
 
         print("MLE: spawning processes")
-        for process in range(num_of_processes):
+        for process in range(self.num_of_processes):
             p = Process(target=self.calc_process, args=[calc_per_prime_queue, results_queue])
             processes.append(p)
             p.start()
-            print("MLE: process started")
 
         # now get the results
         i = 0
