@@ -1,4 +1,5 @@
 import numpy as np
+import math
 '''
 An implementation of the cleartext Epigenetic pacemaker algorithm
 used for benchmark and validation
@@ -83,14 +84,14 @@ class EPM:
         invert_XtX_Xt = np.zeros((x_rows_num, x_cols_num))
         sigma_t = np.sum(self.age_vals)
         sigma_t_square = np.sum(self.age_vals**2)
-        gamma = 1/(sigma_t**2 -m*sigma_t_square)
+        lambda_var = 1/(sigma_t**2 -m*sigma_t_square)
 
         # upper expanded diagonal matrix
         for k in range(n):
             l = k*m
             while l < ((k+1)*m):
                 t_index = l - (k * m)
-                invert_XtX_Xt[k][l] = (-1*m*self.age_vals[t_index] + sigma_t) * gamma
+                invert_XtX_Xt[k][l] = (-1*m*self.age_vals[t_index] + sigma_t) * lambda_var
                 l += 1
 
         # lower expanded diagonal matrix
@@ -98,7 +99,7 @@ class EPM:
             l = k * m
             while l < ((k+1) * m):
                 t_index = l - (k * m)
-                invert_XtX_Xt[k+n][l] = (self.age_vals[t_index] * sigma_t - sigma_t_square) * gamma
+                invert_XtX_Xt[k+n][l] = (self.age_vals[t_index] * sigma_t - sigma_t_square) * lambda_var
                 l += 1
 
         Y = self.meth_vals.flatten().transpose()
@@ -121,14 +122,14 @@ class EPM:
         result = np.zeros(2*n) # here will be the results of the final calculation
         sigma_t = np.sum(self.age_vals)
         sigma_t_square = np.sum(self.age_vals ** 2)
-        gamma = 1 / (sigma_t ** 2 - m * sigma_t_square)
+        lambda_var = 1 / (sigma_t ** 2 - m * sigma_t_square)
 
         # prepare the multiply values
         for i in range(m):
-            mult_val_list.append((-1*m*self.age_vals[i] + sigma_t) * gamma)
+            mult_val_list.append((-1*m*self.age_vals[i] + sigma_t) * lambda_var)
 
         for i in range(m):
-            mult_val_list.append((self.age_vals[i] * sigma_t - sigma_t_square) * gamma)
+            mult_val_list.append((self.age_vals[i] * sigma_t - sigma_t_square) * lambda_var)
 
         list_len_div2 = int(len(mult_val_list)/2)
 
@@ -167,7 +168,8 @@ class EPM:
         result = np.zeros(2 * n)  # here will be the results of the final calculation
         sigma_t = np.sum(self.age_vals)
         sigma_t_square = np.sum(self.age_vals ** 2)
-        gamma = (sigma_t ** 2 - m * sigma_t_square)
+        #print("sigma_t_square: ", sigma_t_square, "\n")
+        lambda_var = (sigma_t ** 2 - m * sigma_t_square)
 
         # prepare the multiply values
         for i in range(m):
@@ -202,10 +204,9 @@ class EPM:
 
         rates = result[0:n]
         s0_vals = result[n:]
-
         # calc the matrix  S = (S_ij - s0_i)
-        meth_vals_gamma = self.meth_vals * gamma
-        S = np.transpose(np.subtract(np.transpose(meth_vals_gamma), s0_vals))
+        meth_vals_lambda_var = self.meth_vals * lambda_var
+        S = np.transpose(np.subtract(np.transpose(meth_vals_lambda_var), s0_vals))
         # calc Si * ri
         F = S * rates[:, np.newaxis]
         # calc sum(r_i^2)
@@ -293,15 +294,15 @@ class EPM:
         @return: the age values
         '''
         i = 0
-        sigma_ri_squared = 1
+        t_denom = 1
 
         while i < iterations:
-            ages, sigma_ri_squared = self.both_steps_no_division(sigma_ri_squared)
-            self.age_vals = ages
-            i += 1
+            t_num, t_denom = self.both_steps_no_division(t_denom)
+            self.age_vals = t_num
 
-        ages = self.age_vals / sigma_ri_squared
-        #print("age numerator: self.age_vals: ", self.age_vals)
-        #print("sigma_ri_squared: ", sigma_ri_squared)
+        max_age_val = max(self.age_vals)
+        #print("Max age value: ", max_age_val, "log2: ", math.log2(max_age_val))
+        #print("t_denom: ", t_denom)
+        ages = self.age_vals / t_denom
         return ages
 
