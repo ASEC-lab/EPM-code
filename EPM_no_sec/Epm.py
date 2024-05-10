@@ -299,6 +299,7 @@ class EPM:
         while i < iterations:
             t_num, t_denom = self.both_steps_no_division(t_denom)
             self.age_vals = t_num
+            i += 1
 
         max_age_val = max(self.age_vals)
         #print("Max age value: ", max_age_val, "log2: ", math.log2(max_age_val))
