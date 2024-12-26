@@ -70,7 +70,7 @@ class DataSets:
         Load the training data
         @return: training data set
         """
-        train_data = self.load_data_set(f'{self.example_dir}GSE74193_train.tsv.gz')
+        train_data = self.load_data_set(f'{self.example_dir}../synthetic_data/synthetic_data.tsv.gz')
         return train_data
 
     def get_example_test_data(self):
@@ -78,10 +78,11 @@ class DataSets:
         Read the test data
         @return: The test data set
         """
+        #test_data = self.load_data_set(f'{self.example_dir}GSE74193_test.tsv.gz')
         test_data = self.load_data_set(f'{self.example_dir}GSE74193_test.tsv.gz')
         return test_data
 
-    def load_and_prepare_example_data(self, correlation_percentage=0.8):
+    def load_and_prepare_example_data(self, correlation_percentage=0.8, max_individuals=0):
         '''
         Read example data, apply pearson correlation and return ages and correlated values
         @param correlation_percentage: the pearson correlation percentage
@@ -90,6 +91,12 @@ class DataSets:
         # read training data
         full_train_data = self.get_example_train_data()
         train_samples, train_cpg_sites, train_ages, train_methylation_values = full_train_data
+
+        #max_individuals = 450
+        if max_individuals > 0:
+            train_methylation_values = train_methylation_values[:, list(range(max_individuals))]
+            train_ages = train_ages[list(range(max_individuals))]
+
         # run pearson correlation in order to reduce the amount of processed data
         abs_pcc_coefficients = abs(pearson_correlation(train_methylation_values, train_ages))
         # correlation of .80 will return ~700 site indices
@@ -97,4 +104,12 @@ class DataSets:
         # these figures are useful for debug, our goal is to run the 700 sites
         correlated_meth_val_indices = np.where(abs_pcc_coefficients > correlation_percentage)[0]
         correlated_meth_val = train_methylation_values[correlated_meth_val_indices, :]
-        return train_ages, correlated_meth_val
+
+        #correlated_meth_val = np.around(correlated_meth_val, 3)
+        #train_ages = np.around(train_ages, 3)
+
+        #correlated_meth_val = correlated_meth_val * 100
+        #train_ages = train_ages * 100
+
+        #return train_ages, correlated_meth_val
+        return train_ages, train_methylation_values
